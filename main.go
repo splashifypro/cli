@@ -91,6 +91,10 @@ func main() {
 		err = cmdAttributes(args[1:])
 	case "attribute", "attr":
 		err = cmdAttribute(args[1:])
+	case "team", "agents", "members":
+		err = cmdTeam(args[1:])
+	case "member", "agent":
+		err = cmdMember(args[1:])
 	case "templates":
 		err = cmdTemplates(args[1:])
 	case "analytics":
@@ -230,6 +234,23 @@ Attributes (custom contact columns):
   splashify attribute delete <id>
   splashify attribute toggle-visibility <id>
   splashify attribute reorder <id> up | down
+
+Team / Agents (mirrors /settings/agents):
+  splashify team                            List members (+ limit / count)
+  splashify member <id>                     Show one member
+  splashify team add --name "Alice" --email a@x.com \
+                     --country-code +91 --phone 9876543210 \
+                     [--role agent|manager] \
+                     [--all read_write | --permissions '{"messages":"read_write"}' \
+                      | --rw messages,contacts --read analytics --none wallet] \
+                     [--otp 123456 | --no-verify]
+  splashify team verify <member_id> --otp <code>
+  splashify team resend-otp <member_id>
+  splashify team resend-invite <member_id>
+  splashify team update <member_id> [--role …] [--all … | --permissions … | --rw … | --read … | --none …]
+  splashify team set-role <member_id> agent | manager
+  splashify team set-permissions <member_id> [--all … | --permissions … | --rw … | --read … | --none …]
+  splashify team delete <member_id>
 
 Broadcasts & more:
   splashify broadcasts
