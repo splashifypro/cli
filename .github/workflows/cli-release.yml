@@ -1,0 +1,46 @@
+# Builds and publishes the splashify CLI on every `v*` tag.
+#
+# This file is shipped with the public splashifypro/cli repo. The CLI lives
+# at the repo root in that repo (not inside a `cli/` subdirectory), so the
+# workflow uses the repo root as the working directory.
+#
+# Manual release:
+#   git tag v0.1.0
+#   git push origin v0.1.0
+#
+# The job runs GoReleaser against .goreleaser.yaml, which creates a GitHub
+# Release with multi-OS/arch tarballs that the install scripts pull.
+name: cli-release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write   # required to publish a GitHub Release
+
+jobs:
+  release:
+    name: GoReleaser
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # GoReleaser needs the full history to derive changelog
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: true
+          cache-dependency-path: go.mod
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

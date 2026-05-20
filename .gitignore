@@ -1,0 +1,14 @@
+# Built binaries
+splashify
+splashify.exe
+/dist/
+
+# GoReleaser local artefacts
+.goreleaser/
+goreleaser
+
+# Editor / OS noise
+.DS_Store
+*.swp
+.idea/
+.vscode/

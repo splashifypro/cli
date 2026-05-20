@@ -1,0 +1,96 @@
+# GoReleaser config for the splashify CLI.
+#
+# This file lives in the public splashifypro/cli repo (the CLI is no longer
+# part of the partnersapi monorepo). Triggered by tags matching `v*` — see
+# .github/workflows/cli-release.yml. Produces multi-OS/arch tarballs (zip on
+# Windows), a SHA256SUMS file, and a GitHub Release. The install scripts
+# (install.sh, install.ps1) resolve the matching asset by OS + arch.
+#
+# Local dry-run:
+#   goreleaser release --snapshot --clean
+version: 2
+
+project_name: splashify
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: splashify
+    main: ./
+    binary: splashify
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      # Windows on arm64 is rarely deployed on VPSes; skip to keep the matrix small.
+      - goos: windows
+        goarch: arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+
+archives:
+  - id: splashify
+    ids:
+      - splashify
+    name_template: >-
+      splashify_{{ .Version }}_{{ .Os }}_{{ if eq .Arch "amd64" }}x86_64{{ else }}{{ .Arch }}{{ end }}
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - README.md
+      - LICENSE*
+
+checksum:
+  name_template: "SHA256SUMS"
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch
+
+release:
+  github:
+    owner: splashifypro
+    name: cli
+  draft: false
+  prerelease: auto
+  name_template: "splashify {{ .Version }}"
+  header: |
+    ## splashify CLI {{ .Version }}
+
+    Install on Linux/macOS:
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/splashifypro/cli/main/install.sh | sh
+    ```
+
+    Install on Windows (PowerShell):
+    ```powershell
+    iwr -useb https://raw.githubusercontent.com/splashifypro/cli/main/install.ps1 | iex
+    ```
+
+    Then run `splashify connect` and paste an access token from
+    **Settings → Developer → Access Tokens** in Splashify Pro.
