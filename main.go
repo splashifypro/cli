@@ -97,6 +97,8 @@ func main() {
 		err = cmdMember(args[1:])
 	case "canned", "cm", "cms", "canned-messages":
 		err = cmdCanned(args[1:])
+	case "instagram", "ig":
+		err = cmdInstagram(args[1:])
 	case "templates":
 		err = cmdTemplates(args[1:])
 	case "analytics":
@@ -236,6 +238,30 @@ Attributes (custom contact columns):
   splashify attribute delete <id>
   splashify attribute toggle-visibility <id>
   splashify attribute reorder <id> up | down
+
+Instagram automation (mirrors /instagram-automation):
+  splashify instagram                       Show connected Instagram account
+  splashify instagram oauth-url             Get the OAuth URL to open in browser
+  splashify instagram connect --code <code> Complete the OAuth handshake
+  splashify instagram disconnect            Unsubscribe webhooks + remove all rules
+  splashify instagram media [--limit N]     List your IG posts (rule targets)
+  splashify instagram logs [--limit N]      Automation activity feed
+  splashify instagram window --conversation <id>     Reply-window check (24h/7d/never)
+  splashify instagram sync                  Backfill conversations from Meta
+  splashify instagram dm --conversation <id> --message "…" \
+                          [--media-url … --media-type image|video|audio]
+  splashify instagram rules                 List comment-to-DM rules
+  splashify instagram rule <id>             Show one rule
+  splashify instagram rule create --media-id <id> --keyword "buy" \
+                                  --dm-message "Here's the link …" \
+                                  [--dm-media-url … --dm-media-type image|video|audio] \
+                                  [--comment-reply "Sent! 💌"] [--active true|false] \
+                                  [--media-caption … --media-thumbnail … --media-permalink …]
+  splashify instagram rule update <id> [--keyword …] [--dm-message …] \
+                                       [--dm-media-url …] [--dm-media-type …] \
+                                       [--comment-reply …] [--active true|false]
+  splashify instagram rule toggle <id>      Flip is_active (RMW + PATCH)
+  splashify instagram rule delete <id>      Permanent removal
 
 Canned Messages (mirrors /settings/canned-messages):
   splashify canned                          List every canned message
