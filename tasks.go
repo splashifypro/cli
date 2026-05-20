@@ -13,6 +13,20 @@ import (
 // passthrough. Every command authenticates with the stored oc_live_ token
 // and hits the same /api/v1/app/* endpoints OpenClaw uses.
 
+// splitTags converts a comma-separated tag list ("vip,lead, hot ") into a
+// trimmed []string suitable for the backend's `[]string` json:"tags" field.
+// Empty entries are dropped.
+func splitTags(s string) []string {
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
 // runReq is the shared path: load config, call the backend, pretty-print JSON.
 func runReq(method, path string, body any) error {
 	cfg, err := requireConfig()
@@ -59,7 +73,7 @@ func cmdMessage(args []string) error {
 			return fmt.Errorf("usage: splashify message send --to +91… --text \"…\"")
 		}
 		return runReq("POST", "/app/messages/send-text", map[string]any{
-			"phone": *to, "message": *text,
+			"to": *to, "text": *text,
 		})
 
 	case "template":
@@ -68,21 +82,51 @@ func cmdMessage(args []string) error {
 		name := fs.String("name", "", "approved template name")
 		lang := fs.String("lang", "en", "template language code")
 		vars := fs.String("vars", "", `JSON array of body variables, e.g. ["John","ORD1"]`)
+		raw := fs.String("template", "", `(advanced) full Meta template JSON; overrides --name/--lang/--vars`)
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
-		if *to == "" || *name == "" {
+		if *to == "" {
 			return fmt.Errorf("usage: splashify message template --to +91… --name <template> [--lang en] [--vars '[…]']")
 		}
-		body := map[string]any{"phone": *to, "template_name": *name, "language_code": *lang}
-		if *vars != "" {
-			var parsed []any
-			if err := json.Unmarshal([]byte(*vars), &parsed); err != nil {
-				return fmt.Errorf("--vars must be a JSON array: %w", err)
+
+		// The backend expects a full Meta-Cloud-API "template" object:
+		//   { "name": "...", "language": {"code":"en"},
+		//     "components": [ {"type":"body","parameters":[{"type":"text","text":"..."}]} ] }
+		// Build it from --name/--lang/--vars, or accept a pre-formed one via --template.
+		var templateObj map[string]any
+		if *raw != "" {
+			if err := json.Unmarshal([]byte(*raw), &templateObj); err != nil {
+				return fmt.Errorf("--template must be valid JSON: %w", err)
 			}
-			body["variables"] = parsed
+		} else {
+			if *name == "" {
+				return fmt.Errorf("--name is required (or use --template with a pre-formed JSON)")
+			}
+			templateObj = map[string]any{
+				"name":     *name,
+				"language": map[string]any{"code": *lang},
+			}
+			if *vars != "" {
+				var values []any
+				if err := json.Unmarshal([]byte(*vars), &values); err != nil {
+					return fmt.Errorf("--vars must be a JSON array, e.g. '[\"Alice\",\"ORD1\"]': %w", err)
+				}
+				params := make([]map[string]any, 0, len(values))
+				for _, v := range values {
+					params = append(params, map[string]any{
+						"type": "text",
+						"text": fmt.Sprintf("%v", v),
+					})
+				}
+				templateObj["components"] = []map[string]any{
+					{"type": "body", "parameters": params},
+				}
+			}
 		}
-		return runReq("POST", "/app/messages/send-template", body)
+		return runReq("POST", "/app/messages/send-template", map[string]any{
+			"to": *to, "template": templateObj,
+		})
 
 	case "media":
 		fs := flag.NewFlagSet("message media", flag.ContinueOnError)
@@ -90,15 +134,19 @@ func cmdMessage(args []string) error {
 		mtype := fs.String("type", "", "media type: image, document, video, audio")
 		murl := fs.String("url", "", "public URL of the media file")
 		caption := fs.String("caption", "", "optional caption")
+		filename := fs.String("filename", "", "filename hint (documents only)")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
 		if *to == "" || *mtype == "" || *murl == "" {
 			return fmt.Errorf("usage: splashify message media --to +91… --type image --url <url> [--caption …]")
 		}
-		body := map[string]any{"phone": *to, "media_type": *mtype, "media_url": *murl}
+		body := map[string]any{"to": *to, "media_type": *mtype, "media_url": *murl}
 		if *caption != "" {
 			body["caption"] = *caption
+		}
+		if *filename != "" {
+			body["filename"] = *filename
 		}
 		return runReq("POST", "/app/messages/send-media", body)
 
@@ -160,21 +208,29 @@ func cmdContact(args []string) error {
 	switch args[0] {
 	case "create":
 		fs := flag.NewFlagSet("contact create", flag.ContinueOnError)
-		phone := fs.String("phone", "", "phone with country code")
-		name := fs.String("name", "", "contact name")
+		phone := fs.String("phone", "", "phone with country code (sent as phone_number)")
+		name := fs.String("name", "", "display name (sent as display_name)")
 		email := fs.String("email", "", "contact email")
+		tags := fs.String("tags", "", "comma-separated tags, e.g. vip,lead")
+		notes := fs.String("notes", "", "free-text notes")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
 		if *phone == "" {
-			return fmt.Errorf("usage: splashify contact create --phone +91… [--name …] [--email …]")
+			return fmt.Errorf("usage: splashify contact create --phone +91… [--name …] [--email …] [--tags vip,lead]")
 		}
-		body := map[string]any{"phone": *phone}
+		body := map[string]any{"phone_number": *phone}
 		if *name != "" {
-			body["name"] = *name
+			body["display_name"] = *name
 		}
 		if *email != "" {
 			body["email"] = *email
+		}
+		if *notes != "" {
+			body["notes"] = *notes
+		}
+		if *tags != "" {
+			body["tags"] = splitTags(*tags)
 		}
 		return runReq("POST", "/app/contacts", body)
 
@@ -186,7 +242,7 @@ func cmdContact(args []string) error {
 
 	case "tag":
 		fs := flag.NewFlagSet("contact tag", flag.ContinueOnError)
-		tags := fs.String("tags", "", "comma-separated tags")
+		tags := fs.String("tags", "", "comma-separated tags, e.g. vip,lead")
 		if len(args) < 2 {
 			return fmt.Errorf("usage: splashify contact tag <id> --tags vip,lead")
 		}
@@ -196,7 +252,9 @@ func cmdContact(args []string) error {
 		if *tags == "" {
 			return fmt.Errorf("--tags is required")
 		}
-		return runReq("POST", "/app/contacts/"+args[1]+"/tags", map[string]any{"tags": *tags})
+		return runReq("POST", "/app/contacts/"+args[1]+"/tags", map[string]any{
+			"tags": splitTags(*tags),
+		})
 
 	case "block":
 		if len(args) < 2 {
