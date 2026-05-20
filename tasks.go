@@ -315,6 +315,102 @@ func cmdBroadcast(args []string) error {
 	}
 }
 
+// ─── waba — WhatsApp Business Account: view + update ─────────────────────────
+
+// cmdWaba surfaces everything the app's /dashboard page shows about the user's
+// connected WhatsApp Business Account, plus the writes that page supports
+// (profile fields, Meta sync, phone registration, deletion request).
+//
+//	splashify waba                                show full status (default)
+//	splashify waba setup-status                   high-level setup checklist
+//	splashify waba sync                           pull fresh data from Meta
+//	splashify waba update --about "..." ...       update business profile
+//	splashify waba register-phone                 (re)register phone with Meta
+//	splashify waba oba-status                     Official Business Account status
+//	splashify waba oba-apply                      apply for Official Business Account
+//	splashify waba request-deletion               request WABA deletion
+func cmdWaba(args []string) error {
+	sub := "status"
+	if len(args) > 0 {
+		sub = args[0]
+	}
+	switch sub {
+	case "status", "info", "":
+		return runReq("GET", "/app/dashboard/whatsapp-status", nil)
+
+	case "setup-status":
+		return runReq("GET", "/app/dashboard/setup-status", nil)
+
+	case "sync":
+		return runReq("POST", "/app/dashboard/sync-meta", nil)
+
+	case "register-phone":
+		return runReq("POST", "/app/dashboard/register-phone", nil)
+
+	case "oba-status":
+		return runReq("GET", "/app/dashboard/oba/status", nil)
+
+	case "oba-apply":
+		return runReq("POST", "/app/dashboard/oba/apply", nil)
+
+	case "request-deletion":
+		return runReq("POST", "/app/waba/request-deletion", nil)
+
+	case "update":
+		// PUT /app/dashboard/whatsapp-profile accepts a free-form Meta
+		// Cloud API "whatsapp_business_profile" body and forwards it as-is.
+		// We expose the common fields as named flags; --data wins for the
+		// rest (e.g. profile_picture_handle).
+		fs := flag.NewFlagSet("waba update", flag.ContinueOnError)
+		about := fs.String("about", "", "short bio (Meta limit ~139 chars)")
+		desc := fs.String("description", "", "longer business description")
+		address := fs.String("address", "", "physical address")
+		email := fs.String("email", "", "contact email")
+		vertical := fs.String("vertical", "", "business category code, e.g. RETAIL")
+		websites := fs.String("websites", "", "comma-separated URLs (max 2 per Meta)")
+		raw := fs.String("data", "", `(advanced) raw JSON body merged on top of the named fields`)
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+
+		body := map[string]any{}
+		if *about != "" {
+			body["about"] = *about
+		}
+		if *desc != "" {
+			body["description"] = *desc
+		}
+		if *address != "" {
+			body["address"] = *address
+		}
+		if *email != "" {
+			body["email"] = *email
+		}
+		if *vertical != "" {
+			body["vertical"] = *vertical
+		}
+		if *websites != "" {
+			body["websites"] = splitTags(*websites) // same split semantics: comma-separated → []string
+		}
+		if *raw != "" {
+			var extra map[string]any
+			if err := json.Unmarshal([]byte(*raw), &extra); err != nil {
+				return fmt.Errorf("--data must be a JSON object: %w", err)
+			}
+			for k, v := range extra {
+				body[k] = v
+			}
+		}
+		if len(body) == 0 {
+			return fmt.Errorf(`usage: splashify waba update [--about "..."] [--description "..."] [--address "..."] [--email "..."] [--vertical RETAIL] [--websites https://...,https://...] [--data '{"...":"..."}']`)
+		}
+		return runReq("PUT", "/app/dashboard/whatsapp-profile", body)
+
+	default:
+		return fmt.Errorf("unknown waba subcommand: %s\nrun: splashify waba", sub)
+	}
+}
+
 // ─── templates / analytics / wallet ──────────────────────────────────────────
 
 func cmdTemplates(_ []string) error {

@@ -67,6 +67,8 @@ func main() {
 		err = cmdBroadcasts(args[1:])
 	case "broadcast":
 		err = cmdBroadcast(args[1:])
+	case "waba":
+		err = cmdWaba(args[1:])
 	case "templates":
 		err = cmdTemplates(args[1:])
 	case "analytics":
@@ -127,6 +129,16 @@ Contacts:
   splashify contact create --phone +91… [--name …] [--email …]
   splashify contact delete|block|unblock <id>
   splashify contact tag <id> --tags vip,lead
+
+WhatsApp Business Account:
+  splashify waba                            Show full WABA details (phone, profile, status…)
+  splashify waba sync                       Refresh data from Meta
+  splashify waba update --about "…" --description "…" --email "…" \
+                        --address "…" --vertical RETAIL --websites https://…
+  splashify waba register-phone             (Re-)register the phone with Meta
+  splashify waba setup-status               High-level setup checklist
+  splashify waba oba-status | oba-apply     Official Business Account
+  splashify waba request-deletion           Request WABA deletion
 
 Broadcasts & more:
   splashify broadcasts
