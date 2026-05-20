@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 )
 
@@ -587,6 +588,18 @@ func cmdWaba(args []string) error {
 		// Cloud API "whatsapp_business_profile" body and forwards it as-is.
 		// We expose the common fields as named flags; --data wins for the
 		// rest (e.g. profile_picture_handle).
+		//
+		// IMPORTANT — read-modify-write
+		// The backend's UpdateWhatsAppProfile runs:
+		//   UPDATE app_wabas SET profile_about=?, profile_description=?,
+		//     profile_address=?, profile_email=?, profile_vertical=?,
+		//     profile_websites=?, updated_at=? WHERE user_id=?
+		// against every request body, binding nil for any field the caller
+		// omitted. A partial update (e.g. `--about "..."` alone) therefore
+		// nukes the other profile columns in the DB even though Meta itself
+		// still has them. Until the backend ships a dynamic-UPDATE fix, we
+		// preload the current profile from /app/dashboard/whatsapp-status
+		// and overlay only the flags the user explicitly passed.
 		fs := flag.NewFlagSet("waba update", flag.ContinueOnError)
 		about := fs.String("about", "", "short bio (Meta limit ~139 chars)")
 		desc := fs.String("description", "", "longer business description")
@@ -599,25 +612,68 @@ func cmdWaba(args []string) error {
 			return err
 		}
 
+		// Record which flags the user actually passed (vs. left at default).
+		// flag.Visit only walks explicitly-set flags, which is exactly the
+		// distinction the read-modify-write needs.
+		passed := map[string]bool{}
+		fs.Visit(func(f *flag.Flag) { passed[f.Name] = true })
+
+		if len(passed) == 0 && *raw == "" {
+			return fmt.Errorf(`usage: splashify waba update [--about "..."] [--description "..."] [--address "..."] [--email "..."] [--vertical RETAIL] [--websites https://...,https://...] [--data '{"...":"..."}']`)
+		}
+
+		// Seed body with the current profile so omitted fields are preserved.
+		// Best-effort: if the read fails, we still send what the user asked
+		// for — same behaviour as before.
+		cfg, err := requireConfig()
+		if err != nil {
+			return err
+		}
+		api := newAPIClient(cfg.BaseURL, cfg.Token)
+
 		body := map[string]any{}
-		if *about != "" {
+		if currentRaw, err := api.callRaw("GET", "/app/dashboard/whatsapp-status", nil); err == nil {
+			var current struct {
+				ProfileAbout       string   `json:"profile_about"`
+				ProfileDescription string   `json:"profile_description"`
+				ProfileAddress     string   `json:"profile_address"`
+				ProfileEmail       string   `json:"profile_email"`
+				ProfileVertical    string   `json:"profile_vertical"`
+				ProfileWebsites    []string `json:"profile_websites"`
+			}
+			_ = json.Unmarshal(currentRaw, &current)
+			body["about"] = current.ProfileAbout
+			body["description"] = current.ProfileDescription
+			body["address"] = current.ProfileAddress
+			body["email"] = current.ProfileEmail
+			body["vertical"] = current.ProfileVertical
+			body["websites"] = current.ProfileWebsites
+		} else {
+			fmt.Fprintln(os.Stderr, "warning: could not preload current profile —", err)
+		}
+
+		// Overlay the explicitly-passed flags.
+		if passed["about"] {
 			body["about"] = *about
 		}
-		if *desc != "" {
+		if passed["description"] {
 			body["description"] = *desc
 		}
-		if *address != "" {
+		if passed["address"] {
 			body["address"] = *address
 		}
-		if *email != "" {
+		if passed["email"] {
 			body["email"] = *email
 		}
-		if *vertical != "" {
+		if passed["vertical"] {
 			body["vertical"] = *vertical
 		}
-		if *websites != "" {
-			body["websites"] = splitTags(*websites) // same split semantics: comma-separated → []string
+		if passed["websites"] {
+			body["websites"] = splitTags(*websites)
 		}
+
+		// --data still wins on top, for advanced fields the named flags
+		// don't cover (e.g. profile_picture_handle).
 		if *raw != "" {
 			var extra map[string]any
 			if err := json.Unmarshal([]byte(*raw), &extra); err != nil {
@@ -627,9 +683,7 @@ func cmdWaba(args []string) error {
 				body[k] = v
 			}
 		}
-		if len(body) == 0 {
-			return fmt.Errorf(`usage: splashify waba update [--about "..."] [--description "..."] [--address "..."] [--email "..."] [--vertical RETAIL] [--websites https://...,https://...] [--data '{"...":"..."}']`)
-		}
+
 		return runReq("PUT", "/app/dashboard/whatsapp-profile", body)
 
 	default:
