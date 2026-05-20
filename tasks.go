@@ -386,6 +386,81 @@ func cmdAccountOverview() error {
 	return nil
 }
 
+// ─── billing — read-only mirror of /settings/billing + invoices/logs ─────────
+
+// cmdBilling surfaces everything the app's "Billing" page reads — the GST
+// billing profile, recent invoices, and billing logs. Strictly read-only: no
+// profile update, no GSTIN validation, no certificate upload. Mutations
+// remain in the web app.
+//
+//	splashify billing                       consolidated view (default)
+//	splashify billing profile               /app/billing — GST profile + address
+//	splashify billing invoices              /app/invoices — invoice list
+//	splashify billing logs [--period all]   /app/expenses/billing-logs
+func cmdBilling(args []string) error {
+	sub := ""
+	if len(args) > 0 {
+		sub = args[0]
+	}
+	switch sub {
+	case "profile":
+		return runReq("GET", "/app/billing", nil)
+	case "invoices":
+		return runReq("GET", "/app/invoices", nil)
+	case "logs":
+		fs := flag.NewFlagSet("billing logs", flag.ContinueOnError)
+		period := fs.String("period", "all", "time window: all, 30d, 90d, today, etc.")
+		limit := fs.String("limit", "", "max entries (server default if empty)")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		path := withQuery("/app/expenses/billing-logs", map[string]string{
+			"period": *period, "limit": *limit,
+		})
+		return runReq("GET", path, nil)
+	case "", "details", "overview":
+		return cmdBillingOverview()
+	default:
+		return fmt.Errorf("unknown billing subcommand: %s\nrun: splashify billing", sub)
+	}
+}
+
+// cmdBillingOverview fetches every billing-related read the dashboard touches
+// and prints them as one consolidated JSON object. Sections that fail are
+// reported per-section as `{"error":"..."}` so the rest of the view still
+// renders. Subscription state lives on /app/me (plan_name, plan_status,
+// plan_billing_cycle, plan_expires_at, trial_ends_at) so we include it here.
+func cmdBillingOverview() error {
+	cfg, err := requireConfig()
+	if err != nil {
+		return err
+	}
+	api := newAPIClient(cfg.BaseURL, cfg.Token)
+
+	fetch := func(path string) json.RawMessage {
+		out, err := api.callRaw("GET", path, nil)
+		if err != nil {
+			return json.RawMessage(fmt.Sprintf(`{"error":%q}`, err.Error()))
+		}
+		return out
+	}
+
+	combined := map[string]json.RawMessage{
+		"profile":      fetch("/app/billing"),
+		"subscription": fetch("/app/me"),
+		"wallet":       fetch("/app/wallet/info"),
+		"invoices":     fetch("/app/invoices"),
+		"logs":         fetch("/app/expenses/billing-logs?period=all"),
+	}
+
+	out, err := json.MarshalIndent(combined, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode response: %w", err)
+	}
+	fmt.Println(string(out))
+	return nil
+}
+
 // ─── waba — WhatsApp Business Account: view + update ─────────────────────────
 
 // cmdWaba surfaces everything the app's /dashboard page shows about the user's

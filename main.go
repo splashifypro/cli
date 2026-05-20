@@ -71,6 +71,8 @@ func main() {
 		err = cmdWaba(args[1:])
 	case "account":
 		err = cmdAccount(args[1:])
+	case "billing":
+		err = cmdBilling(args[1:])
 	case "templates":
 		err = cmdTemplates(args[1:])
 	case "analytics":
@@ -140,6 +142,12 @@ Account (read-only):
   splashify account invitations             Pending invitations received
   splashify account sent-invitations        Invitations you have sent
   splashify account wallet                  Wallet balance
+
+Billing (read-only):
+  splashify billing                         Consolidated billing view
+  splashify billing profile                 GST profile + billing address
+  splashify billing invoices                Invoice list
+  splashify billing logs [--period all]     Billing log entries
 
 WhatsApp Business Account:
   splashify waba                            Show full WABA details (phone, profile, status…)
