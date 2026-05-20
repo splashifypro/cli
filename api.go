@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -137,6 +140,61 @@ func (c *apiClient) callRaw(method, path string, body any) (json.RawMessage, err
 		return nil, err
 	}
 	return out, nil
+}
+
+// uploadFile POSTs a multipart/form-data request with a single file part to
+// the given path. Used by `splashify media upload`. Uses its own http.Client
+// with a 5-minute timeout — the default 30s on `c.http` is too tight for
+// even modestly-sized videos and PDFs on real networks.
+//
+//	formField  the form field name the backend expects (e.g. "file")
+//	filePath   path to a file on disk
+//
+// Returns the raw JSON response body on 2xx. apiError on non-2xx (same shape
+// as `do`), so the 402 plan_required upgrade-prompt logic still applies.
+func (c *apiClient) uploadFile(path, formField, filePath string) (json.RawMessage, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("open file: %w", err)
+	}
+	defer file.Close()
+
+	// Buffer the form in memory. Files this CLI uploads are bounded by the
+	// backend's per-type limits (largest is video at a few hundred MB) and
+	// the user's storage quota, so a bytes.Buffer is fine without streaming.
+	buf := &bytes.Buffer{}
+	w := multipart.NewWriter(buf)
+	part, err := w.CreateFormFile(formField, filepath.Base(filePath))
+	if err != nil {
+		return nil, fmt.Errorf("create form file: %w", err)
+	}
+	if _, err := io.Copy(part, file); err != nil {
+		return nil, fmt.Errorf("read file: %w", err)
+	}
+	if err := w.Close(); err != nil {
+		return nil, fmt.Errorf("close multipart writer: %w", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/api/v1"+path, buf)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	req.Header.Set("Accept", "application/json")
+
+	uploadClient := &http.Client{Timeout: 5 * time.Minute}
+	resp, err := uploadClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("upload failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, &apiError{status: resp.StatusCode, body: string(raw)}
+	}
+	return raw, nil
 }
 
 // printJSON writes a JSON value to stdout, indented for readability.

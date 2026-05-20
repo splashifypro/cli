@@ -75,6 +75,8 @@ func main() {
 		err = cmdBilling(args[1:])
 	case "subscription", "subscriptions", "sub":
 		err = cmdSubscription(args[1:])
+	case "media":
+		err = cmdMedia(args[1:])
 	case "templates":
 		err = cmdTemplates(args[1:])
 	case "analytics":
@@ -166,6 +168,13 @@ WhatsApp Business Account:
   splashify waba setup-status               High-level setup checklist
   splashify waba oba-status | oba-apply     Official Business Account
   splashify waba request-deletion           Request WABA deletion
+
+Media library:
+  splashify media                           List every uploaded file (URL + details)
+  splashify media list --type image         Filter by image|video|audio|document
+  splashify media storage                   Storage quota + usage
+  splashify media upload ./logo.png         Upload a file from disk
+  splashify media delete <media_id>         Delete a media row
 
 Broadcasts & more:
   splashify broadcasts

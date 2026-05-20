@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -384,6 +385,95 @@ func cmdAccountOverview() error {
 		return fmt.Errorf("encode response: %w", err)
 	}
 	fmt.Println(string(out))
+	return nil
+}
+
+// ─── media — list, upload, delete the user's media library ───────────────────
+
+// cmdMedia surfaces /media — list/filter the user's uploaded files, upload
+// new files from disk, see storage usage, and delete files by media_id.
+//
+//	splashify media                     list everything (default)
+//	splashify media list [--type T]     filter by image | video | audio | document
+//	splashify media storage             storage quota + usage
+//	splashify media upload <path>       upload a file from disk
+//	splashify media delete <media_id>   delete a media row by ID
+//
+// Accepted file types (per backend's classifyFileType):
+//   images:    .jpg .jpeg .png
+//   videos:    .mp4
+//   audio:     .mp3 .ogg .webm .aac .amr .m4a
+//   documents: .pdf .xlsx .xls .doc .docx .csv
+func cmdMedia(args []string) error {
+	sub := ""
+	if len(args) > 0 {
+		sub = args[0]
+	}
+	switch sub {
+	case "", "list", "ls":
+		fs := flag.NewFlagSet("media list", flag.ContinueOnError)
+		ftype := fs.String("type", "", "filter: image, video, audio, document")
+		// `splashify media` (no subcommand) has no further args; only "list" / "ls" can take flags.
+		flagArgs := args
+		if sub == "list" || sub == "ls" {
+			flagArgs = args[1:]
+		} else {
+			flagArgs = []string{}
+		}
+		if err := fs.Parse(flagArgs); err != nil {
+			return err
+		}
+		path := "/app/media"
+		if *ftype != "" {
+			path += "?type=" + url.QueryEscape(*ftype)
+		}
+		return runReq("GET", path, nil)
+
+	case "storage", "quota":
+		return runReq("GET", "/app/media/storage", nil)
+
+	case "upload":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: splashify media upload <path-to-file>")
+		}
+		return cmdMediaUpload(args[1])
+
+	case "delete", "rm":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: splashify media delete <media_id>")
+		}
+		return runReq("DELETE", "/app/media/"+args[1], nil)
+
+	default:
+		return fmt.Errorf("unknown media subcommand: %s\nrun: splashify media", sub)
+	}
+}
+
+// cmdMediaUpload posts a single file to /app/media/upload via multipart.
+// Backend constraints (image/video/audio/doc + size caps + storage quota)
+// are enforced server-side — the CLI just streams the file up and prints
+// whatever JSON comes back.
+func cmdMediaUpload(filePath string) error {
+	cfg, err := requireConfig()
+	if err != nil {
+		return err
+	}
+
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return fmt.Errorf("file not accessible: %w", err)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("%s is a directory; pass a single file", filePath)
+	}
+
+	api := newAPIClient(cfg.BaseURL, cfg.Token)
+	fmt.Fprintf(os.Stderr, "Uploading %s (%d bytes)…\n", filepath.Base(filePath), info.Size())
+	raw, err := api.uploadFile("/app/media/upload", "file", filePath)
+	if err != nil {
+		return err
+	}
+	printJSON(raw)
 	return nil
 }
 
