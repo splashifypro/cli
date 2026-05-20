@@ -83,6 +83,10 @@ func main() {
 		err = cmdTags(args[1:])
 	case "tag":
 		err = cmdTag(args[1:])
+	case "segments":
+		err = cmdSegments(args[1:])
+	case "segment":
+		err = cmdSegment(args[1:])
 	case "templates":
 		err = cmdTemplates(args[1:])
 	case "analytics":
@@ -197,6 +201,19 @@ Tags (CRUD on the tag library):
   splashify tag create "VIP"                Create a tag
   splashify tag rename <id> "Important"     Rename a tag
   splashify tag delete <id>                 Delete a tag (unmaps all contacts)
+
+Segments (CRUD + introspection):
+  splashify segments [--search …] [--page N] [--limit N]
+  splashify segments stats                  Overall segment counts
+  splashify segment <id>                    Get one segment
+  splashify segment <id> contacts [--page] [--limit]
+  splashify segment <id> count              Current member count
+  splashify segment <id> refresh            Recompute member count
+  splashify segment create --name "VIP" --filters '{…}' [--description …] \
+                          [--dynamic true|false] [--active true|false]
+  splashify segment update <id> [--name] [--description] [--filters] \
+                                [--dynamic] [--active]
+  splashify segment delete <id>
 
 Broadcasts & more:
   splashify broadcasts

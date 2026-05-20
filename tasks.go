@@ -388,6 +388,221 @@ func cmdAccountOverview() error {
 	return nil
 }
 
+// ─── segments — CRUD + introspection on /settings/segments ───────────────────
+
+// cmdSegments lists segments with pagination + server-side search.
+//
+//	splashify segments                              first page
+//	splashify segments --page 2 --limit 50          paginate
+//	splashify segments --search vip                 server-side name search
+//	splashify segments stats                        overall stats
+func cmdSegments(args []string) error {
+	// `segments stats` is a small convenience for the top-level endpoint.
+	if len(args) > 0 && args[0] == "stats" {
+		return runReq("GET", "/app/segments/stats", nil)
+	}
+	fs := flag.NewFlagSet("segments", flag.ContinueOnError)
+	search := fs.String("search", "", "server-side name search")
+	page := fs.String("page", "", "page number")
+	limit := fs.String("limit", "", "items per page")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	path := withQuery("/app/segments", map[string]string{
+		"search": *search, "page": *page, "limit": *limit,
+	})
+	return runReq("GET", path, nil)
+}
+
+// cmdSegment is the singular form — per-entity actions and CRUD writes.
+//
+//	splashify segment <id>                          GET one segment
+//	splashify segment <id> contacts [--page --limit]
+//	splashify segment <id> count                    current member count
+//	splashify segment <id> refresh                  recompute count
+//
+//	splashify segment create   --name "VIP" --filters '{"conditions":[…],"logic":"and"}' \
+//	                           [--description "…"] [--dynamic true|false] [--active true|false]
+//	splashify segment update <id> [--name …] [--description …] [--filters …] \
+//	                              [--dynamic …] [--active …]
+//	splashify segment delete <id>
+//
+// Filter DSL (shipped as-is to the backend's POST /app/segments):
+//
+//	{
+//	  "conditions": [
+//	    {"field": "tags",        "operator": "includes", "value": "VIP"},
+//	    {"field": "hasOptedOut", "operator": "equals",   "value": false}
+//	  ],
+//	  "logic": "and"
+//	}
+//
+// Fields: displayName, phoneNumber, email, tags, hasOptedOut, isBlocked,
+// createdAt, updatedAt. Operators: equals, notEquals, contains, notContains,
+// startsWith, endsWith, isEmpty, isNotEmpty, includes, notIncludes (the
+// last two are the array form used by `tags`).
+func cmdSegment(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: splashify segment <id|create|update|delete|stats> …")
+	}
+
+	switch args[0] {
+	case "create":
+		return cmdSegmentCreate(args[1:])
+	case "update", "edit":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: splashify segment update <id> [--name …] [--description …] [--filters …] [--active true|false] [--dynamic true|false]")
+		}
+		return cmdSegmentUpdate(args[1], args[2:])
+	case "delete", "rm", "remove":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: splashify segment delete <id>")
+		}
+		return runReq("DELETE", "/app/segments/"+args[1], nil)
+	case "stats":
+		return runReq("GET", "/app/segments/stats", nil)
+	}
+
+	// Treat the first arg as a segment id; optional sub-action follows.
+	id := args[0]
+	if len(args) == 1 {
+		return runReq("GET", "/app/segments/"+id, nil)
+	}
+	switch args[1] {
+	case "contacts":
+		fs := flag.NewFlagSet("segment contacts", flag.ContinueOnError)
+		page := fs.String("page", "", "page number")
+		limit := fs.String("limit", "", "items per page")
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+		path := withQuery("/app/segments/"+id+"/contacts", map[string]string{
+			"page": *page, "limit": *limit,
+		})
+		return runReq("GET", path, nil)
+	case "count":
+		return runReq("GET", "/app/segments/"+id+"/count", nil)
+	case "refresh", "recompute":
+		return runReq("POST", "/app/segments/"+id+"/refresh", nil)
+	default:
+		return fmt.Errorf("unknown segment action: %s\nrun: splashify segment", args[1])
+	}
+}
+
+// cmdSegmentCreate parses the create flags, validates the filter JSON, and
+// POSTs. --filters is required; everything else is optional. --dynamic /
+// --active accept "true"/"false" strings so the flag.Visit check below can
+// tell "explicitly set" from "left at default".
+func cmdSegmentCreate(args []string) error {
+	fs := flag.NewFlagSet("segment create", flag.ContinueOnError)
+	name := fs.String("name", "", "segment name (required)")
+	desc := fs.String("description", "", "optional description")
+	filters := fs.String("filters", "", `filter DSL JSON, e.g. '{"conditions":[…],"logic":"and"}' (required)`)
+	dynamic := fs.String("dynamic", "", "true|false (default: backend chooses)")
+	active := fs.String("active", "", "true|false (default: backend chooses)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *name == "" || *filters == "" {
+		return fmt.Errorf(`usage: splashify segment create --name "VIP" --filters '{"conditions":[…],"logic":"and"}' [--description …] [--dynamic true|false] [--active true|false]`)
+	}
+
+	var filterObj map[string]any
+	if err := json.Unmarshal([]byte(*filters), &filterObj); err != nil {
+		return fmt.Errorf("--filters must be valid JSON: %w", err)
+	}
+
+	body := map[string]any{
+		"name":    *name,
+		"filters": filterObj,
+	}
+	if *desc != "" {
+		body["description"] = *desc
+	}
+	passed := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { passed[f.Name] = true })
+	if passed["dynamic"] {
+		b, err := parseBool(*dynamic)
+		if err != nil {
+			return fmt.Errorf("--dynamic must be true or false")
+		}
+		body["is_dynamic"] = b
+	}
+	if passed["active"] {
+		b, err := parseBool(*active)
+		if err != nil {
+			return fmt.Errorf("--active must be true or false")
+		}
+		body["is_active"] = b
+	}
+
+	return runReq("POST", "/app/segments", body)
+}
+
+// cmdSegmentUpdate PATCHes only the fields the user explicitly passed. The
+// backend's PATCH accepts an arbitrary subset, so partial updates are safe
+// without read-modify-write.
+func cmdSegmentUpdate(id string, args []string) error {
+	fs := flag.NewFlagSet("segment update", flag.ContinueOnError)
+	name := fs.String("name", "", "new name")
+	desc := fs.String("description", "", "new description")
+	filters := fs.String("filters", "", "new filters JSON")
+	dynamic := fs.String("dynamic", "", "true|false")
+	active := fs.String("active", "", "true|false")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	passed := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { passed[f.Name] = true })
+	if len(passed) == 0 {
+		return fmt.Errorf(`usage: splashify segment update <id> [--name …] [--description …] [--filters '{…}'] [--dynamic true|false] [--active true|false]`)
+	}
+
+	body := map[string]any{}
+	if passed["name"] {
+		body["name"] = *name
+	}
+	if passed["description"] {
+		body["description"] = *desc
+	}
+	if passed["filters"] {
+		var filterObj map[string]any
+		if err := json.Unmarshal([]byte(*filters), &filterObj); err != nil {
+			return fmt.Errorf("--filters must be valid JSON: %w", err)
+		}
+		body["filters"] = filterObj
+	}
+	if passed["dynamic"] {
+		b, err := parseBool(*dynamic)
+		if err != nil {
+			return fmt.Errorf("--dynamic must be true or false")
+		}
+		body["is_dynamic"] = b
+	}
+	if passed["active"] {
+		b, err := parseBool(*active)
+		if err != nil {
+			return fmt.Errorf("--active must be true or false")
+		}
+		body["is_active"] = b
+	}
+
+	return runReq("PATCH", "/app/segments/"+id, body)
+}
+
+// parseBool accepts the canonical truthy/falsy strings users will type
+// at the shell: true/false, yes/no, 1/0, on/off (case-insensitive).
+func parseBool(s string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "true", "yes", "1", "on", "y", "t":
+		return true, nil
+	case "false", "no", "0", "off", "n", "f":
+		return false, nil
+	}
+	return false, fmt.Errorf("not a boolean: %q", s)
+}
+
 // ─── tags — CRUD on the tag library (/settings/tags) ─────────────────────────
 
 // cmdTags lists every tag on the account.
