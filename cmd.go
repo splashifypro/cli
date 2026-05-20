@@ -68,26 +68,39 @@ func cmdConnect(args []string) error {
 	// WABA gate — the CLI is only useful for accounts with a connected
 	// WhatsApp Business Account. Refuse early with an actionable message so
 	// the user is not left wondering why every later command fails.
-	elig, err := api.cliEligibility()
-	if err != nil {
-		// If the backend is older and doesn't have the endpoint, fall through
-		// rather than blocking — every shipped backend after sprint-2 has it.
-		fmt.Fprintln(os.Stderr, "warning: could not check CLI eligibility —", err)
-	} else if !elig.Eligible {
-		switch elig.Reason {
-		case "no_waba":
-			return fmt.Errorf(`your Splashify Pro account does not have a WhatsApp Business Account connected yet.
+	//
+	// Escape hatch: SPLASHIFY_SKIP_ELIGIBILITY=1 skips the check entirely.
+	// Useful while waiting on a backend rollout that fixes a server-side
+	// gate bug, or for users connecting from a sub-account whose WABA lives
+	// on a parent record. Token validation (the api.me() call above) still
+	// runs — this only bypasses the WABA reachability check.
+	if v := os.Getenv("SPLASHIFY_SKIP_ELIGIBILITY"); v != "" && v != "0" && v != "false" {
+		fmt.Fprintln(os.Stderr, "note: SPLASHIFY_SKIP_ELIGIBILITY is set — skipping WABA eligibility check")
+	} else {
+		elig, err := api.cliEligibility()
+		if err != nil {
+			// If the backend is older and doesn't have the endpoint, fall through
+			// rather than blocking — every shipped backend after sprint-2 has it.
+			fmt.Fprintln(os.Stderr, "warning: could not check CLI eligibility —", err)
+		} else if !elig.Eligible {
+			switch elig.Reason {
+			case "no_waba":
+				return fmt.Errorf(`your Splashify Pro account does not have a WhatsApp Business Account connected yet.
 
   Open https://app.splashifypro.com → WhatsApp → Connect Number,
-  finish the Meta Embedded Signup, then run "splashify connect" again`)
-		case "account_suspended":
-			return fmt.Errorf("your account is not active — contact support to re-enable it")
-		default:
-			msg := elig.Message
-			if msg == "" {
-				msg = "your account is not eligible to use the CLI (reason: " + elig.Reason + ")"
+  finish the Meta Embedded Signup, then run "splashify connect" again.
+
+  If you are certain the account already has a WABA and the gate is
+  misreporting, retry with SPLASHIFY_SKIP_ELIGIBILITY=1 to bypass the check`)
+			case "account_suspended":
+				return fmt.Errorf("your account is not active — contact support to re-enable it")
+			default:
+				msg := elig.Message
+				if msg == "" {
+					msg = "your account is not eligible to use the CLI (reason: " + elig.Reason + ")"
+				}
+				return fmt.Errorf("%s", msg)
 			}
-			return fmt.Errorf("%s", msg)
 		}
 	}
 
