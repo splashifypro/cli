@@ -33,10 +33,56 @@ type apiError struct {
 }
 
 func (e *apiError) Error() string {
+	// Parse JSON body — many of the friendlier messages live here.
+	var parsed map[string]any
+	jsonOK := json.Unmarshal([]byte(e.body), &parsed) == nil
+
+	// Tier-gate detection. When the backend refuses a command because the
+	// user is on a lower plan than the feature requires, it should respond
+	// with HTTP 402 / 403 and a body like:
+	//   {"success":false, "error":"plan_required",
+	//    "required_plan":"GROWTH", "current_plan":"STARTER",
+	//    "feature":"broadcasts.create",
+	//    "upgrade_url":"https://app.splashifypro.com/settings/subscriptions"}
+	// We surface that as an upgrade prompt regardless of which command was
+	// called — the backend stays the source of truth for what's gated.
+	if jsonOK {
+		if errCode, _ := parsed["error"].(string); errCode == "plan_required" ||
+			errCode == "subscription_required" || errCode == "tier_required" {
+			required, _ := parsed["required_plan"].(string)
+			current, _ := parsed["current_plan"].(string)
+			feature, _ := parsed["feature"].(string)
+			url, _ := parsed["upgrade_url"].(string)
+			if url == "" {
+				url = "https://app.splashifypro.com/settings/subscriptions"
+			}
+
+			var b strings.Builder
+			b.WriteString("this feature requires a higher plan")
+			if required != "" {
+				b.WriteString(" (")
+				if current != "" {
+					b.WriteString("you are on ")
+					b.WriteString(current)
+					b.WriteString(", ")
+				}
+				b.WriteString("needed: ")
+				b.WriteString(required)
+				b.WriteString(")")
+			}
+			if feature != "" {
+				b.WriteString("\n  Feature: ")
+				b.WriteString(feature)
+			}
+			b.WriteString("\n  Upgrade your plan:  ")
+			b.WriteString(url)
+			return b.String()
+		}
+	}
+
 	msg := e.body
 	// Surface the backend's "message" field if the body is JSON.
-	var parsed map[string]any
-	if json.Unmarshal([]byte(e.body), &parsed) == nil {
+	if jsonOK {
 		if m, ok := parsed["message"].(string); ok && m != "" {
 			msg = m
 		}
@@ -179,13 +225,19 @@ func (c *apiClient) revokeToken(id string) error {
 // returns 200 OK in every case; the CLI inspects `Eligible` and `Reason`
 // rather than parsing HTTP status codes.
 type eligibilityResponse struct {
-	Success       bool   `json:"success"`
-	Eligible      bool   `json:"eligible"`
-	Reason        string `json:"reason"`
-	WabaConnected bool   `json:"waba_connected"`
-	AccountEmail  string `json:"account_email"`
-	PlanActive    bool   `json:"plan_active"`
-	Message       string `json:"message"`
+	Success            bool   `json:"success"`
+	Eligible           bool   `json:"eligible"`
+	Reason             string `json:"reason"`
+	WabaConnected      bool   `json:"waba_connected"`
+	AccountEmail       string `json:"account_email"`
+	PlanActive         bool   `json:"plan_active"`
+	SubscriptionActive bool   `json:"subscription_active"`
+	PlanName           string `json:"plan_name"`
+	PlanStatus         string `json:"plan_status"`
+	PlanExpiresAt      string `json:"plan_expires_at"`
+	TrialEndsAt        string `json:"trial_ends_at"`
+	UpgradeURL         string `json:"upgrade_url"`
+	Message            string `json:"message"`
 }
 
 // cliEligibility asks the backend whether this account is allowed to use the

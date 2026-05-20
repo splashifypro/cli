@@ -386,6 +386,86 @@ func cmdAccountOverview() error {
 	return nil
 }
 
+// ─── subscription — read-only mirror of /settings/subscriptions ──────────────
+
+// cmdSubscription surfaces the user's current plan + add-ons + plan list.
+// Read-only: no upgrade, no payment initiation, no coupon validation —
+// every mutation stays in the web app, with the CLI pointing users at
+// /settings/subscriptions when an upgrade is needed.
+//
+//	splashify subscription                  consolidated view (default)
+//	splashify subscription status           /app/plans/subscription
+//	splashify subscription plans            /plans — available plans
+//	splashify subscription addons           current add-ons only
+func cmdSubscription(args []string) error {
+	sub := ""
+	if len(args) > 0 {
+		sub = args[0]
+	}
+	switch sub {
+	case "status", "current":
+		return runReq("GET", "/app/plans/subscription", nil)
+	case "plans", "available":
+		// /plans is at /api/v1/plans (not under /app), so callRaw still works.
+		return runReq("GET", "/plans", nil)
+	case "addons":
+		// Reuse status — the addons live on the same payload, just project them.
+		cfg, err := requireConfig()
+		if err != nil {
+			return err
+		}
+		raw, err := newAPIClient(cfg.BaseURL, cfg.Token).callRaw("GET", "/app/plans/subscription", nil)
+		if err != nil {
+			return err
+		}
+		var parsed struct {
+			Addons json.RawMessage `json:"addons"`
+		}
+		_ = json.Unmarshal(raw, &parsed)
+		if len(parsed.Addons) == 0 {
+			parsed.Addons = json.RawMessage("[]")
+		}
+		printJSON(parsed.Addons)
+		return nil
+	case "", "details", "overview":
+		return cmdSubscriptionOverview()
+	default:
+		return fmt.Errorf("unknown subscription subcommand: %s\nrun: splashify subscription", sub)
+	}
+}
+
+// cmdSubscriptionOverview merges the subscription detail (current plan +
+// add-ons) with the eligibility snapshot (so the user sees plan_status,
+// trial_ends_at, and the upgrade URL in one place).
+func cmdSubscriptionOverview() error {
+	cfg, err := requireConfig()
+	if err != nil {
+		return err
+	}
+	api := newAPIClient(cfg.BaseURL, cfg.Token)
+
+	fetch := func(path string) json.RawMessage {
+		out, err := api.callRaw("GET", path, nil)
+		if err != nil {
+			return json.RawMessage(fmt.Sprintf(`{"error":%q}`, err.Error()))
+		}
+		return out
+	}
+
+	combined := map[string]json.RawMessage{
+		"subscription": fetch("/app/plans/subscription"),
+		"eligibility":  fetch("/app/developer/cli-eligibility"),
+		"available_plans": fetch("/plans"),
+	}
+
+	out, err := json.MarshalIndent(combined, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode response: %w", err)
+	}
+	fmt.Println(string(out))
+	return nil
+}
+
 // ─── billing — read-only mirror of /settings/billing + invoices/logs ─────────
 
 // cmdBilling surfaces everything the app's "Billing" page reads — the GST

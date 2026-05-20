@@ -94,6 +94,20 @@ func cmdConnect(args []string) error {
   misreporting, retry with SPLASHIFY_SKIP_ELIGIBILITY=1 to bypass the check`)
 			case "account_suspended":
 				return fmt.Errorf("your account is not active — contact support to re-enable it")
+			case "subscription_expired":
+				url := elig.UpgradeURL
+				if url == "" {
+					url = "https://app.splashifypro.com/settings/subscriptions"
+				}
+				return fmt.Errorf(`your trial has ended and there is no active paid plan on this account.
+
+  The splashify CLI requires an active subscription (paid plan OR
+  unexpired trial).
+
+  Upgrade your plan:  %s
+
+  Run "splashify subscription" once a plan is active to confirm,
+  then re-run "splashify connect".`, url)
 			default:
 				msg := elig.Message
 				if msg == "" {

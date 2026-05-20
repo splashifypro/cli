@@ -73,6 +73,8 @@ func main() {
 		err = cmdAccount(args[1:])
 	case "billing":
 		err = cmdBilling(args[1:])
+	case "subscription", "subscriptions", "sub":
+		err = cmdSubscription(args[1:])
 	case "templates":
 		err = cmdTemplates(args[1:])
 	case "analytics":
@@ -148,6 +150,12 @@ Billing (read-only):
   splashify billing profile                 GST profile + billing address
   splashify billing invoices                Invoice list
   splashify billing logs [--period all]     Billing log entries
+
+Subscription (read-only):
+  splashify subscription                    Plan + add-ons + eligibility + available plans
+  splashify subscription status             Current plan + add-ons
+  splashify subscription plans              Available plans
+  splashify subscription addons             Add-ons only
 
 WhatsApp Business Account:
   splashify waba                            Show full WABA details (phone, profile, status…)
