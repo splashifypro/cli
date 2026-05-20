@@ -99,6 +99,10 @@ func main() {
 		err = cmdCanned(args[1:])
 	case "instagram", "ig":
 		err = cmdInstagram(args[1:])
+	case "devices", "sessions", "ses":
+		err = cmdDevices(args[1:])
+	case "session", "device":
+		err = cmdSession(args[1:])
 	case "templates":
 		err = cmdTemplates(args[1:])
 	case "analytics":
@@ -238,6 +242,14 @@ Attributes (custom contact columns):
   splashify attribute delete <id>
   splashify attribute toggle-visibility <id>
   splashify attribute reorder <id> up | down
+
+Devices / Sessions (mirrors /settings/devices):
+  splashify devices                         List every active login session
+  splashify devices list [--platform web|android|ios|mobile] [--ip <addr>]
+  splashify session <session_id>            Show one session
+  splashify devices logout <session_id>     Remotely sign out one session
+  splashify devices logout-all [--yes] [--platform …] [--ip …]
+                                            Sign out every (matching) session
 
 Instagram automation (mirrors /instagram-automation):
   splashify instagram                       Show connected Instagram account
