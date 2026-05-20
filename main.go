@@ -69,6 +69,8 @@ func main() {
 		err = cmdBroadcast(args[1:])
 	case "waba":
 		err = cmdWaba(args[1:])
+	case "account":
+		err = cmdAccount(args[1:])
 	case "templates":
 		err = cmdTemplates(args[1:])
 	case "analytics":
@@ -103,7 +105,8 @@ func usage() {
 
 Setup:
   splashify connect              Connect this machine with an oc_live_ token
-  splashify whoami               Show the connected account
+  splashify whoami               Show the connected account (compact)
+  splashify account              Full account details (read-only)
   splashify doctor               Diagnose the local setup
 
 Access tokens:
@@ -129,6 +132,14 @@ Contacts:
   splashify contact create --phone +91… [--name …] [--email …]
   splashify contact delete|block|unblock <id>
   splashify contact tag <id> --tags vip,lead
+
+Account (read-only):
+  splashify account                         Consolidated account details
+  splashify account info                    Profile + plan (/app/me)
+  splashify account orgs                    Organizations you belong to
+  splashify account invitations             Pending invitations received
+  splashify account sent-invitations        Invitations you have sent
+  splashify account wallet                  Wallet balance
 
 WhatsApp Business Account:
   splashify waba                            Show full WABA details (phone, profile, status…)

@@ -315,6 +315,77 @@ func cmdBroadcast(args []string) error {
 	}
 }
 
+// ─── account — read-only mirror of /settings/account-details ─────────────────
+
+// cmdAccount surfaces the data the app's "Account Details" page shows. It is
+// intentionally read-only — there is no `update`, no `accept`, no `invite`,
+// no `switch`. To mutate any of this state, use the web app.
+//
+//	splashify account                       consolidated view (default)
+//	splashify account info                  /app/me — profile + plan
+//	splashify account orgs                  /app/organizations
+//	splashify account invitations           /app/org/invitations  (received)
+//	splashify account sent-invitations      /app/org/sent-invitations
+//	splashify account wallet                /app/wallet/info
+func cmdAccount(args []string) error {
+	sub := ""
+	if len(args) > 0 {
+		sub = args[0]
+	}
+	switch sub {
+	case "info", "me", "profile":
+		return runReq("GET", "/app/me", nil)
+	case "orgs", "organizations":
+		return runReq("GET", "/app/organizations", nil)
+	case "invitations", "invites":
+		return runReq("GET", "/app/org/invitations", nil)
+	case "sent-invitations", "sent-invites":
+		return runReq("GET", "/app/org/sent-invitations", nil)
+	case "wallet":
+		return runReq("GET", "/app/wallet/info", nil)
+	case "", "details", "overview":
+		return cmdAccountOverview()
+	default:
+		return fmt.Errorf("unknown account subcommand: %s\nrun: splashify account", sub)
+	}
+}
+
+// cmdAccountOverview fetches every section the /settings/account-details page
+// reads and prints them as one consolidated JSON object. Each section is
+// fetched independently — a section that 404s or errors is reported as
+// `{"error":"..."}` rather than failing the whole command.
+func cmdAccountOverview() error {
+	cfg, err := requireConfig()
+	if err != nil {
+		return err
+	}
+	api := newAPIClient(cfg.BaseURL, cfg.Token)
+
+	fetch := func(path string) json.RawMessage {
+		out, err := api.callRaw("GET", path, nil)
+		if err != nil {
+			return json.RawMessage(fmt.Sprintf(`{"error":%q}`, err.Error()))
+		}
+		return out
+	}
+
+	combined := map[string]json.RawMessage{
+		"user":                 fetch("/app/me"),
+		"wallet":               fetch("/app/wallet/info"),
+		"whatsapp":             fetch("/app/dashboard/whatsapp-status"),
+		"organizations":        fetch("/app/organizations"),
+		"invitations_received": fetch("/app/org/invitations"),
+		"invitations_sent":     fetch("/app/org/sent-invitations"),
+	}
+
+	out, err := json.MarshalIndent(combined, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode response: %w", err)
+	}
+	fmt.Println(string(out))
+	return nil
+}
+
 // ─── waba — WhatsApp Business Account: view + update ─────────────────────────
 
 // cmdWaba surfaces everything the app's /dashboard page shows about the user's
