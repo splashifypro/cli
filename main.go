@@ -103,6 +103,10 @@ func main() {
 		err = cmdDevices(args[1:])
 	case "session", "device":
 		err = cmdSession(args[1:])
+	case "flows":
+		err = cmdFlows(args[1:])
+	case "flow":
+		err = cmdFlow(args[1:])
 	case "templates":
 		err = cmdTemplates(args[1:])
 	case "analytics":
@@ -242,6 +246,15 @@ Attributes (custom contact columns):
   splashify attribute delete <id>
   splashify attribute toggle-visibility <id>
   splashify attribute reorder <id> up | down
+
+WhatsApp Flows (mirrors /flows):
+  splashify flows                           List every flow (with response_count)
+  splashify flows sync                      Pull fresh data from Meta
+  splashify flows create-url                Print URL to create a flow in Meta Flow Builder
+  splashify flow <flow_id>                  Show one flow
+  splashify flow <flow_id> responses [--page N] [--limit N]    List submissions
+  splashify flow <flow_id> deprecate        Mark the flow deprecated
+  splashify flow response <response_id>     Show one submission by id
 
 Devices / Sessions (mirrors /settings/devices):
   splashify devices                         List every active login session
