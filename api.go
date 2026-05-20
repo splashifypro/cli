@@ -153,6 +153,15 @@ func (c *apiClient) callRaw(method, path string, body any) (json.RawMessage, err
 // Returns the raw JSON response body on 2xx. apiError on non-2xx (same shape
 // as `do`), so the 402 plan_required upgrade-prompt logic still applies.
 func (c *apiClient) uploadFile(path, formField, filePath string) (json.RawMessage, error) {
+	return c.uploadFileWithFields(path, formField, filePath, nil)
+}
+
+// uploadFileWithFields is uploadFile's variant that also writes extra
+// text form fields alongside the file part. Used for endpoints that need
+// metadata next to the upload — e.g. RCS template uploads carry a
+// `media_height` field (`SHORT`/`MEDIUM`/`TALL`) describing the rich card
+// media slot the file will fill.
+func (c *apiClient) uploadFileWithFields(path, formField, filePath string, extra map[string]string) (json.RawMessage, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("open file: %w", err)
@@ -164,6 +173,11 @@ func (c *apiClient) uploadFile(path, formField, filePath string) (json.RawMessag
 	// the user's storage quota, so a bytes.Buffer is fine without streaming.
 	buf := &bytes.Buffer{}
 	w := multipart.NewWriter(buf)
+	for k, v := range extra {
+		if err := w.WriteField(k, v); err != nil {
+			return nil, fmt.Errorf("write form field %s: %w", k, err)
+		}
+	}
 	part, err := w.CreateFormFile(formField, filepath.Base(filePath))
 	if err != nil {
 		return nil, fmt.Errorf("create form file: %w", err)

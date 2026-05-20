@@ -1551,11 +1551,11 @@ func cmdWaba(args []string) error {
 	}
 }
 
-// ─── templates / analytics / wallet ──────────────────────────────────────────
-
-func cmdTemplates(_ []string) error {
-	return runReq("GET", "/app/templates", nil)
-}
+// ─── analytics / wallet ──────────────────────────────────────────────────────
+//
+// (templates moved to cli/templates.go — that file owns `templates`, the
+// singular `template <id>`, and the `rcs templates` / `rcs template <id>`
+// subtrees.)
 
 func cmdAnalytics(args []string) error {
 	path := "/app/analytics/summary"

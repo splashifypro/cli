@@ -109,6 +109,10 @@ func main() {
 		err = cmdFlow(args[1:])
 	case "templates":
 		err = cmdTemplates(args[1:])
+	case "template":
+		err = cmdTemplate(args[1:])
+	case "rcs":
+		err = cmdRCS(args[1:])
 	case "analytics":
 		err = cmdAnalytics(args[1:])
 	case "wallet":
@@ -324,11 +328,36 @@ Team / Agents (mirrors /settings/agents):
   splashify team set-permissions <member_id> [--all … | --permissions … | --rw … | --read … | --none …]
   splashify team delete <member_id>
 
-Broadcasts & more:
+Broadcasts:
   splashify broadcasts
   splashify broadcast <id> | stats
   splashify broadcast create --name … --template … --audience-type segment …
-  splashify templates
+
+WhatsApp templates (mirrors /templates and /templates/create):
+  splashify templates                       List every WhatsApp template
+  splashify template <template_id>          Show one template
+  splashify templates sync                  Sync ALL templates from Meta
+  splashify templates sync <template_id>    Sync one template from Meta
+  splashify templates upload-media <file>   Upload media → returns Meta media handle
+  splashify templates create --name "promo_welcome" --language en --category MARKETING \
+                              --text "Welcome to our store!"
+  splashify templates create --name "promo" --language en --category MARKETING \
+                              --components '[{"type":"BODY","text":"…"}]'
+  splashify templates create --file ./template.json    # full payload from disk
+  splashify templates delete <template_id> [--name <template_name>]
+
+RCS templates (mirrors /templates/rcs/create):
+  splashify rcs templates                                List every RCS template
+  splashify rcs template <template_id>                   Show one
+  splashify rcs template <template_id> check-status      Poll latest approval status
+  splashify rcs templates upload-media <file> [--height SHORT|MEDIUM|TALL]
+  splashify rcs templates create --name "promo" --type basic --text "Hi there!"
+  splashify rcs templates create --name "promo" --type rich_card \
+                                  --data '{"type":"card","card":{…}}'
+  splashify rcs templates create --name "promo" --type carousel --file ./carousel.json
+  splashify rcs templates delete <template_id>
+
+Other:
   splashify analytics [trends]
   splashify wallet [transactions]
 
