@@ -79,6 +79,10 @@ func main() {
 		err = cmdMedia(args[1:])
 	case "opt", "opt-management":
 		err = cmdOpt(args[1:])
+	case "tags":
+		err = cmdTags(args[1:])
+	case "tag":
+		err = cmdTag(args[1:])
 	case "templates":
 		err = cmdTemplates(args[1:])
 	case "analytics":
@@ -186,6 +190,13 @@ Opt-out / Opt-in keywords:
   splashify opt out response "<text>"       Set the auto-response message
   splashify opt out response-on / off       Enable / disable the auto-response
   splashify opt in  …                       Same actions on the in side
+
+Tags (CRUD on the tag library):
+  splashify tags                            List every tag
+  splashify tags --search vip               Substring filter on tag name
+  splashify tag create "VIP"                Create a tag
+  splashify tag rename <id> "Important"     Rename a tag
+  splashify tag delete <id>                 Delete a tag (unmaps all contacts)
 
 Broadcasts & more:
   splashify broadcasts

@@ -388,6 +388,98 @@ func cmdAccountOverview() error {
 	return nil
 }
 
+// ─── tags — CRUD on the tag library (/settings/tags) ─────────────────────────
+
+// cmdTags lists every tag on the account.
+//
+//	splashify tags                 list all tags
+//	splashify tags --search vip    client-side substring filter
+func cmdTags(args []string) error {
+	fs := flag.NewFlagSet("tags", flag.ContinueOnError)
+	search := fs.String("search", "", "client-side substring filter on tag name")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *search == "" {
+		return runReq("GET", "/app/tags", nil)
+	}
+
+	// The backend doesn't accept a search query, so mirror the page's
+	// behaviour and filter client-side.
+	cfg, err := requireConfig()
+	if err != nil {
+		return err
+	}
+	raw, err := newAPIClient(cfg.BaseURL, cfg.Token).callRaw("GET", "/app/tags", nil)
+	if err != nil {
+		return err
+	}
+	var resp struct {
+		Success bool             `json:"success"`
+		Tags    []map[string]any `json:"tags"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		// Some deployments return the array under a different key — just
+		// dump the raw response so users can see what they got.
+		printJSON(raw)
+		return nil
+	}
+	needle := strings.ToLower(*search)
+	matched := make([]map[string]any, 0, len(resp.Tags))
+	for _, t := range resp.Tags {
+		name, _ := t["name"].(string)
+		if strings.Contains(strings.ToLower(name), needle) {
+			matched = append(matched, t)
+		}
+	}
+	out := map[string]any{"success": true, "tags": matched, "count": len(matched)}
+	encoded, _ := json.MarshalIndent(out, "", "  ")
+	fmt.Println(string(encoded))
+	return nil
+}
+
+// cmdTag covers the write side and the single-entity read.
+//
+//	splashify tag create "<name>"             POST /app/tags
+//	splashify tag rename <id> "<new name>"    PUT /app/tags/:id
+//	splashify tag delete <id>                 DELETE /app/tags/:id
+//	splashify tag <id>                        GET /app/tags/:id (if backend supports it)
+//
+// On delete, every contact tagged with this tag is unmapped — same as the
+// /settings/tags page warns. There is no soft-undo.
+func cmdTag(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: splashify tag <create|rename|delete|...> …\n       splashify tags  (list)")
+	}
+	switch args[0] {
+	case "create":
+		if len(args) < 2 {
+			return fmt.Errorf(`usage: splashify tag create "<name>"`)
+		}
+		name := strings.Join(args[1:], " ")
+		return runReq("POST", "/app/tags", map[string]any{"name": name})
+
+	case "rename", "update", "edit":
+		if len(args) < 3 {
+			return fmt.Errorf(`usage: splashify tag rename <id> "<new-name>"`)
+		}
+		id := args[1]
+		name := strings.Join(args[2:], " ")
+		return runReq("PUT", "/app/tags/"+id, map[string]any{"name": name})
+
+	case "delete", "rm", "remove":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: splashify tag delete <id>")
+		}
+		return runReq("DELETE", "/app/tags/"+args[1], nil)
+
+	default:
+		// Treat the first arg as a tag id and try to GET it. Backends that
+		// don't expose per-id GET will return 404 — surface it as-is.
+		return runReq("GET", "/app/tags/"+args[0], nil)
+	}
+}
+
 // ─── opt — Opt-out / Opt-in keyword management ───────────────────────────────
 
 // optConfig mirrors one side of the opt-settings payload. The backend's PUT
