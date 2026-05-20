@@ -388,6 +388,300 @@ func cmdAccountOverview() error {
 	return nil
 }
 
+// ─── attributes — CRUD + visibility + reorder on /settings/attributes ────────
+
+// attributeRecord mirrors a single row in /app/attributes. Used as the
+// read-modify-write seed for `attribute update`. Pointers on the optional
+// booleans let us tell "absent" from "false" — important because the
+// backend's PUT requires the full body.
+type attributeRecord struct {
+	AttributeID  string   `json:"attribute_id"`
+	Label        string   `json:"label"`
+	Type         string   `json:"type"`
+	IsVisible    *bool    `json:"is_visible,omitempty"`
+	IsRequired   *bool    `json:"is_required,omitempty"`
+	DisplayOrder int      `json:"display_order,omitempty"`
+	Options      []string `json:"options,omitempty"`
+	DefaultValue string   `json:"default_value,omitempty"`
+	HelpText     string   `json:"help_text,omitempty"`
+}
+
+type attributesListResponse struct {
+	Success    bool              `json:"success"`
+	Attributes []attributeRecord `json:"attributes"`
+}
+
+// cmdAttributes lists every attribute (custom contact column).
+//
+//	splashify attributes               full list
+//	splashify attributes --search co   client-side substring filter on label
+func cmdAttributes(args []string) error {
+	fs := flag.NewFlagSet("attributes", flag.ContinueOnError)
+	search := fs.String("search", "", "client-side substring filter on label")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *search == "" {
+		return runReq("GET", "/app/attributes", nil)
+	}
+	cfg, err := requireConfig()
+	if err != nil {
+		return err
+	}
+	raw, err := newAPIClient(cfg.BaseURL, cfg.Token).callRaw("GET", "/app/attributes", nil)
+	if err != nil {
+		return err
+	}
+	var list attributesListResponse
+	if err := json.Unmarshal(raw, &list); err != nil {
+		printJSON(raw)
+		return nil
+	}
+	needle := strings.ToLower(*search)
+	matched := make([]attributeRecord, 0, len(list.Attributes))
+	for _, a := range list.Attributes {
+		if strings.Contains(strings.ToLower(a.Label), needle) {
+			matched = append(matched, a)
+		}
+	}
+	out := map[string]any{"success": true, "attributes": matched, "count": len(matched)}
+	encoded, _ := json.MarshalIndent(out, "", "  ")
+	fmt.Println(string(encoded))
+	return nil
+}
+
+// cmdAttribute handles per-entity reads, CRUD writes, the visibility
+// toggle, and the up/down reorder action.
+//
+//	splashify attribute <id>                          show one
+//	splashify attribute create --label "Company" --type TEXT [flags…]
+//	splashify attribute update <id> [flags…]          PUT (read-modify-write)
+//	splashify attribute delete <id>                   soft-delete
+//	splashify attribute toggle-visibility <id>        flip is_visible
+//	splashify attribute reorder <id> up | down        move in display order
+//
+// Types: TEXT, NUMBER, EMAIL, PHONE, DATE, SELECT, MULTISELECT, URL, CHECKBOX
+//
+// SELECT / MULTISELECT require --options (comma-separated). Validation
+// happens server-side; the CLI passes whatever you provide.
+func cmdAttribute(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: splashify attribute <id|create|update|delete|toggle-visibility|reorder> …")
+	}
+
+	switch args[0] {
+	case "create":
+		return cmdAttributeCreate(args[1:])
+	case "update", "edit":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: splashify attribute update <id> [--label …] [--type …] [--visible …] [--required …] [--options …] [--default …] [--help …]")
+		}
+		return cmdAttributeUpdate(args[1], args[2:])
+	case "delete", "rm", "remove":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: splashify attribute delete <id>")
+		}
+		return runReq("DELETE", "/app/attributes/"+args[1], nil)
+	case "toggle-visibility", "toggle":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: splashify attribute toggle-visibility <id>")
+		}
+		return runReq("POST", "/app/attributes/"+args[1]+"/toggle-visibility", nil)
+	case "reorder", "move":
+		if len(args) < 3 {
+			return fmt.Errorf("usage: splashify attribute reorder <id> up|down")
+		}
+		dir := strings.ToLower(args[2])
+		if dir != "up" && dir != "down" {
+			return fmt.Errorf("direction must be 'up' or 'down', got %q", args[2])
+		}
+		return runReq("POST", "/app/attributes/reorder", map[string]any{
+			"attribute_id": args[1],
+			"direction":    dir,
+		})
+	}
+
+	// Default: treat the first arg as an attribute_id. The backend has no
+	// per-id GET, so we fetch the list and filter — clean fallback that
+	// behaves the way users expect.
+	id := args[0]
+	cfg, err := requireConfig()
+	if err != nil {
+		return err
+	}
+	raw, err := newAPIClient(cfg.BaseURL, cfg.Token).callRaw("GET", "/app/attributes", nil)
+	if err != nil {
+		return err
+	}
+	var list attributesListResponse
+	if err := json.Unmarshal(raw, &list); err != nil {
+		return fmt.Errorf("decode attributes list: %w", err)
+	}
+	for _, a := range list.Attributes {
+		if a.AttributeID == id {
+			encoded, _ := json.MarshalIndent(a, "", "  ")
+			fmt.Println(string(encoded))
+			return nil
+		}
+	}
+	return fmt.Errorf("attribute %s not found", id)
+}
+
+// cmdAttributeCreate POSTs a new attribute. --label and --type are
+// required; the rest mirror the dialog in /settings/attributes. --options
+// is comma-separated; --visible / --required accept true/false.
+func cmdAttributeCreate(args []string) error {
+	fs := flag.NewFlagSet("attribute create", flag.ContinueOnError)
+	label := fs.String("label", "", "attribute label (required, max 100 chars; spaces become underscores)")
+	atype := fs.String("type", "", "TEXT|NUMBER|EMAIL|PHONE|DATE|SELECT|MULTISELECT|URL|CHECKBOX (required)")
+	options := fs.String("options", "", "comma-separated options (required for SELECT / MULTISELECT)")
+	visible := fs.String("visible", "", "true|false (default: backend chooses, usually true)")
+	required := fs.String("required", "", "true|false (default: false)")
+	defaultVal := fs.String("default", "", "default value for new contacts")
+	helpText := fs.String("help", "", "help text shown to users")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *label == "" || *atype == "" {
+		return fmt.Errorf(`usage: splashify attribute create --label "Company" --type TEXT [--options "a,b,c"] [--visible true|false] [--required true|false] [--default …] [--help …]`)
+	}
+	// Replicate the page's UX: spaces in labels become underscores. Lets
+	// users type "Job Title" and get "Job_Title".
+	cleanLabel := strings.ReplaceAll(*label, " ", "_")
+
+	body := map[string]any{
+		"label": cleanLabel,
+		"type":  strings.ToUpper(*atype),
+	}
+	if *options != "" {
+		body["options"] = splitTags(*options)
+	}
+	if *defaultVal != "" {
+		body["default_value"] = *defaultVal
+	}
+	if *helpText != "" {
+		body["help_text"] = *helpText
+	}
+	passed := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { passed[f.Name] = true })
+	if passed["visible"] {
+		b, err := parseBool(*visible)
+		if err != nil {
+			return fmt.Errorf("--visible must be true or false")
+		}
+		body["is_visible"] = b
+	}
+	if passed["required"] {
+		b, err := parseBool(*required)
+		if err != nil {
+			return fmt.Errorf("--required must be true or false")
+		}
+		body["is_required"] = b
+	}
+	return runReq("POST", "/app/attributes", body)
+}
+
+// cmdAttributeUpdate is read-modify-write — the backend's PUT requires
+// label + type + the full set of optional columns. Load the current row,
+// overlay the flags the user explicitly passed, send the full body.
+func cmdAttributeUpdate(id string, args []string) error {
+	fs := flag.NewFlagSet("attribute update", flag.ContinueOnError)
+	label := fs.String("label", "", "new label")
+	atype := fs.String("type", "", "new type")
+	options := fs.String("options", "", "comma-separated options")
+	visible := fs.String("visible", "", "true|false")
+	required := fs.String("required", "", "true|false")
+	defaultVal := fs.String("default", "", "default value")
+	helpText := fs.String("help", "", "help text")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	passed := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { passed[f.Name] = true })
+	if len(passed) == 0 {
+		return fmt.Errorf("usage: splashify attribute update <id> [--label …] [--type …] [--visible …] [--required …] [--options …] [--default …] [--help …]")
+	}
+
+	cfg, err := requireConfig()
+	if err != nil {
+		return err
+	}
+	api := newAPIClient(cfg.BaseURL, cfg.Token)
+
+	// Seed the body from the current attribute.
+	raw, err := api.callRaw("GET", "/app/attributes", nil)
+	if err != nil {
+		return err
+	}
+	var list attributesListResponse
+	if err := json.Unmarshal(raw, &list); err != nil {
+		return fmt.Errorf("decode attributes list: %w", err)
+	}
+	var current *attributeRecord
+	for i := range list.Attributes {
+		if list.Attributes[i].AttributeID == id {
+			current = &list.Attributes[i]
+			break
+		}
+	}
+	if current == nil {
+		return fmt.Errorf("attribute %s not found", id)
+	}
+
+	body := map[string]any{
+		"label": current.Label,
+		"type":  current.Type,
+	}
+	if current.IsVisible != nil {
+		body["is_visible"] = *current.IsVisible
+	}
+	if current.IsRequired != nil {
+		body["is_required"] = *current.IsRequired
+	}
+	if len(current.Options) > 0 {
+		body["options"] = current.Options
+	}
+	if current.DefaultValue != "" {
+		body["default_value"] = current.DefaultValue
+	}
+	if current.HelpText != "" {
+		body["help_text"] = current.HelpText
+	}
+
+	// Overlay the user's flags.
+	if passed["label"] {
+		body["label"] = strings.ReplaceAll(*label, " ", "_")
+	}
+	if passed["type"] {
+		body["type"] = strings.ToUpper(*atype)
+	}
+	if passed["options"] {
+		body["options"] = splitTags(*options)
+	}
+	if passed["default"] {
+		body["default_value"] = *defaultVal
+	}
+	if passed["help"] {
+		body["help_text"] = *helpText
+	}
+	if passed["visible"] {
+		b, err := parseBool(*visible)
+		if err != nil {
+			return fmt.Errorf("--visible must be true or false")
+		}
+		body["is_visible"] = b
+	}
+	if passed["required"] {
+		b, err := parseBool(*required)
+		if err != nil {
+			return fmt.Errorf("--required must be true or false")
+		}
+		body["is_required"] = b
+	}
+
+	return runReq("PUT", "/app/attributes/"+id, body)
+}
+
 // ─── segments — CRUD + introspection on /settings/segments ───────────────────
 
 // cmdSegments lists segments with pagination + server-side search.

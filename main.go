@@ -87,6 +87,10 @@ func main() {
 		err = cmdSegments(args[1:])
 	case "segment":
 		err = cmdSegment(args[1:])
+	case "attributes":
+		err = cmdAttributes(args[1:])
+	case "attribute", "attr":
+		err = cmdAttribute(args[1:])
 	case "templates":
 		err = cmdTemplates(args[1:])
 	case "analytics":
@@ -214,6 +218,18 @@ Segments (CRUD + introspection):
   splashify segment update <id> [--name] [--description] [--filters] \
                                 [--dynamic] [--active]
   splashify segment delete <id>
+
+Attributes (custom contact columns):
+  splashify attributes [--search …]         List every attribute
+  splashify attribute <id>                  Show one attribute
+  splashify attribute create --label "Company" --type TEXT \
+                             [--options "a,b,c"] [--visible true|false] \
+                             [--required true|false] [--default …] [--help …]
+  splashify attribute update <id> [--label] [--type] [--visible] [--required] \
+                                  [--options] [--default] [--help]
+  splashify attribute delete <id>
+  splashify attribute toggle-visibility <id>
+  splashify attribute reorder <id> up | down
 
 Broadcasts & more:
   splashify broadcasts
