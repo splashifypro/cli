@@ -388,6 +388,175 @@ func cmdAccountOverview() error {
 	return nil
 }
 
+// ─── opt — Opt-out / Opt-in keyword management ───────────────────────────────
+
+// optConfig mirrors one side of the opt-settings payload. The backend's PUT
+// expects both opt_out and opt_in present, so every write does a
+// read-modify-write to preserve the other side.
+type optConfig struct {
+	Keywords        []string `json:"keywords"`
+	Response        string   `json:"response"`
+	ResponseEnabled bool     `json:"response_enabled"`
+}
+
+type optSettings struct {
+	Success bool      `json:"success"`
+	OptOut  optConfig `json:"opt_out"`
+	OptIn   optConfig `json:"opt_in"`
+}
+
+// cmdOpt drives /settings/opt-management — keyword lists, auto-response
+// text, and the response on/off toggle for both opt-out and opt-in.
+//
+//	splashify opt                                full settings (default)
+//	splashify opt out | in                       just one side
+//	splashify opt out add STOP UNSUBSCRIBE       add keywords
+//	splashify opt out remove STOP                remove keywords
+//	splashify opt out response "<text>"          set auto-response text
+//	splashify opt out response-on | response-off toggle auto-response
+//	splashify opt in  …                          same actions on the in side
+//
+// Every write is read-modify-write — the backend's PUT requires both
+// opt_out and opt_in in the body, so we load the current state, mutate
+// the requested side, and submit the full payload.
+func cmdOpt(args []string) error {
+	if len(args) == 0 {
+		return runReq("GET", "/app/opt-settings", nil)
+	}
+
+	side := args[0]
+	switch side {
+	case "status", "show":
+		return runReq("GET", "/app/opt-settings", nil)
+	case "out", "in":
+		// fall through to action handling
+	default:
+		return fmt.Errorf("unknown opt subcommand: %s\nrun: splashify opt", side)
+	}
+
+	cfg, err := requireConfig()
+	if err != nil {
+		return err
+	}
+	api := newAPIClient(cfg.BaseURL, cfg.Token)
+	current, err := loadOptSettings(api)
+	if err != nil {
+		return err
+	}
+	target := &current.OptOut
+	if side == "in" {
+		target = &current.OptIn
+	}
+
+	// `splashify opt out` / `splashify opt in` with no further args — print
+	// just that side.
+	if len(args) == 1 {
+		raw, mErr := json.MarshalIndent(target, "", "  ")
+		if mErr != nil {
+			return fmt.Errorf("encode: %w", mErr)
+		}
+		fmt.Println(string(raw))
+		return nil
+	}
+
+	action := args[1]
+	rest := args[2:]
+
+	switch action {
+	case "add":
+		if len(rest) == 0 {
+			return fmt.Errorf("usage: splashify opt %s add <keyword> [<keyword> ...]", side)
+		}
+		for _, kw := range rest {
+			kw = strings.TrimSpace(kw)
+			if kw == "" {
+				continue
+			}
+			already := false
+			for _, existing := range target.Keywords {
+				if strings.EqualFold(existing, kw) {
+					already = true
+					break
+				}
+			}
+			if !already {
+				target.Keywords = append(target.Keywords, kw)
+			}
+		}
+
+	case "remove", "rm":
+		if len(rest) == 0 {
+			return fmt.Errorf("usage: splashify opt %s remove <keyword> [<keyword> ...]", side)
+		}
+		drop := map[string]bool{}
+		for _, kw := range rest {
+			drop[strings.ToLower(strings.TrimSpace(kw))] = true
+		}
+		kept := target.Keywords[:0]
+		for _, kw := range target.Keywords {
+			if !drop[strings.ToLower(kw)] {
+				kept = append(kept, kw)
+			}
+		}
+		target.Keywords = kept
+
+	case "response":
+		// Allow `splashify opt out response ""` to clear the text by passing
+		// an explicit empty single-arg, or any args joined by space.
+		if len(rest) == 0 {
+			return fmt.Errorf(`usage: splashify opt %s response "<text>"`, side)
+		}
+		target.Response = strings.Join(rest, " ")
+
+	case "response-on", "enable":
+		target.ResponseEnabled = true
+
+	case "response-off", "disable":
+		target.ResponseEnabled = false
+
+	default:
+		return fmt.Errorf(`unknown action: %s
+usage: splashify opt %s <add|remove|response|response-on|response-off> …`, action, side)
+	}
+
+	return saveOptSettings(api, current)
+}
+
+// loadOptSettings reads the current opt-settings into a parsed struct,
+// normalising nil slices so the round-trip back to JSON doesn't emit `null`.
+func loadOptSettings(api *apiClient) (*optSettings, error) {
+	raw, err := api.callRaw("GET", "/app/opt-settings", nil)
+	if err != nil {
+		return nil, err
+	}
+	var s optSettings
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return nil, fmt.Errorf("decode opt-settings: %w", err)
+	}
+	if s.OptOut.Keywords == nil {
+		s.OptOut.Keywords = []string{}
+	}
+	if s.OptIn.Keywords == nil {
+		s.OptIn.Keywords = []string{}
+	}
+	return &s, nil
+}
+
+// saveOptSettings PUTs the full opt-settings payload (both sides required by
+// the backend) and prints the response.
+func saveOptSettings(api *apiClient, s *optSettings) error {
+	body := map[string]any{
+		"opt_out": s.OptOut,
+		"opt_in":  s.OptIn,
+	}
+	raw, err := api.callRaw("PUT", "/app/opt-settings", body)
+	if err != nil {
+		return err
+	}
+	printJSON(raw)
+	return nil
+}
+
 // ─── media — list, upload, delete the user's media library ───────────────────
 
 // cmdMedia surfaces /media — list/filter the user's uploaded files, upload

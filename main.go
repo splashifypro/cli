@@ -77,6 +77,8 @@ func main() {
 		err = cmdSubscription(args[1:])
 	case "media":
 		err = cmdMedia(args[1:])
+	case "opt", "opt-management":
+		err = cmdOpt(args[1:])
 	case "templates":
 		err = cmdTemplates(args[1:])
 	case "analytics":
@@ -175,6 +177,15 @@ Media library:
   splashify media storage                   Storage quota + usage
   splashify media upload ./logo.png         Upload a file from disk
   splashify media delete <media_id>         Delete a media row
+
+Opt-out / Opt-in keywords:
+  splashify opt                             Show full opt settings
+  splashify opt out | in                    Show just one side
+  splashify opt out add STOP UNSUBSCRIBE    Add keywords to opt-out list
+  splashify opt out remove STOP             Remove keywords from opt-out list
+  splashify opt out response "<text>"       Set the auto-response message
+  splashify opt out response-on / off       Enable / disable the auto-response
+  splashify opt in  …                       Same actions on the in side
 
 Broadcasts & more:
   splashify broadcasts
