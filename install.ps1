@@ -35,10 +35,13 @@ if (-not $version) {
 }
 if ($version -notmatch '^v') { $version = "v$version" }
 $tag = $version
+# GoReleaser names assets with the bare semver ({{ .Version }}, no `v` prefix)
+# while the release tag keeps the `v`. Keep both forms.
+$assetVersion = $version -replace '^v',''
 Say "Installing splashify $version for windows/$goarch"
 
 # ── 3. Download artefacts ────────────────────────────────────────────────────
-$asset = "splashify_${version}_windows_${goarch}.zip"
+$asset = "splashify_${assetVersion}_windows_${goarch}.zip"
 $base  = "https://github.com/$Repo/releases/download/$tag"
 $tmp   = Join-Path $env:TEMP "splashify-install-$([Guid]::NewGuid())"
 New-Item -ItemType Directory -Force -Path $tmp | Out-Null

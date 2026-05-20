@@ -68,10 +68,13 @@ case "$version" in
   *) version="v${version}" ;;
 esac
 tag="${version}"
+# GoReleaser names assets with the bare semver ({{ .Version }}, no `v` prefix)
+# while the release tag keeps the `v`. Keep both forms.
+asset_version="${version#v}"
 say "Installing splashify ${version} for ${goos}/${goarch}"
 
 # ── 3. Download artefacts ────────────────────────────────────────────────────
-asset="splashify_${version}_${goos}_${goarch}.tar.gz"
+asset="splashify_${asset_version}_${goos}_${goarch}.tar.gz"
 base="https://github.com/${REPO}/releases/download/${tag}"
 
 tmp=$(mktemp -d 2>/dev/null || mktemp -d -t splashify)
