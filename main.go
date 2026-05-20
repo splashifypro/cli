@@ -95,6 +95,8 @@ func main() {
 		err = cmdTeam(args[1:])
 	case "member", "agent":
 		err = cmdMember(args[1:])
+	case "canned", "cm", "cms", "canned-messages":
+		err = cmdCanned(args[1:])
 	case "templates":
 		err = cmdTemplates(args[1:])
 	case "analytics":
@@ -234,6 +236,25 @@ Attributes (custom contact columns):
   splashify attribute delete <id>
   splashify attribute toggle-visibility <id>
   splashify attribute reorder <id> up | down
+
+Canned Messages (mirrors /settings/canned-messages):
+  splashify canned                          List every canned message
+  splashify canned list [--search …] [--type TEXT|IMAGE|VIDEO|AUDIO|DOCUMENT]
+  splashify canned <id>                     Show one canned message
+  splashify canned create --name "Welcome" --type TEXT --text "Hi there!" \
+                          [--shortcut "/hi"] [--description "…"]
+  splashify canned create --name "Receipt" --type IMAGE \
+                          --url https://… [--caption "…"]
+  splashify canned create --name "Brochure" --type DOCUMENT \
+                          --url https://… --filename brochure.pdf [--caption "…"]
+  splashify canned create --name "Voice note" --type AUDIO --url https://…
+  splashify canned create --name "List menu" --type INTERACTIVE_LIST \
+                          --payload '{"interactive":{…}}'
+  splashify canned update <id> [--name …] [--shortcut …] [--description …] \
+                                [--type …] [--text … | --url …] [--caption …] \
+                                [--filename …] [--payload '{…}']
+  splashify canned toggle <id>              Flip is_active (activate / deactivate)
+  splashify canned delete <id>              Remove the canned message
 
 Team / Agents (mirrors /settings/agents):
   splashify team                            List members (+ limit / count)
