@@ -276,46 +276,9 @@ func cmdContact(args []string) error {
 	}
 }
 
-// ─── broadcasts ──────────────────────────────────────────────────────────────
-
-func cmdBroadcasts(_ []string) error {
-	return runReq("GET", "/app/broadcasts", nil)
-}
-
-func cmdBroadcast(args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("usage: splashify broadcast <id|stats|create> …")
-	}
-	switch args[0] {
-	case "stats":
-		return runReq("GET", "/app/broadcasts/stats", nil)
-
-	case "create":
-		fs := flag.NewFlagSet("broadcast create", flag.ContinueOnError)
-		name := fs.String("name", "", "campaign name")
-		tmpl := fs.String("template", "", "approved template name")
-		audType := fs.String("audience-type", "", "segment, tag, or all")
-		audID := fs.String("audience-id", "", "segment ID or tag name")
-		schedule := fs.String("schedule", "", "ISO 8601 time; empty = send now")
-		if err := fs.Parse(args[1:]); err != nil {
-			return err
-		}
-		if *name == "" || *tmpl == "" || *audType == "" {
-			return fmt.Errorf("usage: splashify broadcast create --name … --template … --audience-type <segment|tag|all> [--audience-id …] [--schedule …]")
-		}
-		body := map[string]any{"name": *name, "template_name": *tmpl, "audience_type": *audType}
-		if *audID != "" {
-			body["audience_id"] = *audID
-		}
-		if *schedule != "" {
-			body["schedule_at"] = *schedule
-		}
-		return runReq("POST", "/app/broadcasts", body)
-
-	default:
-		return runReq("GET", "/app/broadcasts/"+args[0], nil)
-	}
-}
+// Broadcast commands live in broadcast.go since v0.1.23 — old stubs here
+// used wrong field names (audience_type/audience_id, schedule_at) and have
+// been removed.
 
 // ─── account — read-only mirror of /settings/account-details ─────────────────
 

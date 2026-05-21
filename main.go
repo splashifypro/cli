@@ -385,10 +385,24 @@ Email marketing (full surface — /email + /settings/email-domain):
   splashify email campaign send <id>
   splashify email campaign cancel <id>
 
-Broadcasts:
-  splashify broadcasts
-  splashify broadcast <id> | stats
-  splashify broadcast create --name … --template … --audience-type segment …
+Broadcasts (subscription + balance preflight on writes):
+  splashify broadcasts [--status …] [--search …] [--page N] [--limit N]
+  splashify broadcast stats [--period 7d|30d|all]
+  splashify broadcast <id> [--recompute]            Show one broadcast
+  splashify broadcast <id> messages [--status …] [--channel whatsapp|rcs] [--page] [--limit] [--search] [--cumulative true|false]
+  splashify broadcast <id> cohorts                  Cohort counts (failed/sent/delivered/read)
+  splashify broadcast <id> export [--status ALL] [--csv]
+  splashify broadcast <id> cancel | restart | send-now
+  splashify broadcast <id> rebroadcast --cohort failed|sent|delivered|read|all \
+                                       [--name] [--template] [--template-id] [--params] [--media-url] [--send-at] [--yes]
+  splashify broadcast create --name "May launch" --template promo_welcome \
+                             --category MARKETING --language en \
+                             [--template-id] [--params '{"components":[…]}'] [--media-url …] \
+                             (--segment-ids id1,id2 | --contact-ids id1,id2) \
+                             [--send-type now|scheduled] [--scheduled-at 2026-06-01T10:00:00Z] \
+                             [--rate-limit N] [--batch-size N] \
+                             [--rcs | --rcs-fallback-template-id … --rcs-fallback-template-name …] \
+                             [--yes]
 
 WhatsApp templates (mirrors /templates and /templates/create):
   splashify templates                       List every WhatsApp template
