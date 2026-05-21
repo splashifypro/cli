@@ -121,6 +121,8 @@ func main() {
 		err = cmdSupport(args[1:])
 	case "ticket":
 		err = cmdTicket(args[1:])
+	case "expenses", "expense", "track-expenses":
+		err = cmdExpenses(args[1:])
 	case "templates":
 		err = cmdTemplates(args[1:])
 	case "template":
@@ -368,6 +370,18 @@ Support tickets (mirrors /support):
                           [--priority low|medium|high|urgent]
   splashify ticket <id> reply "<message>"           Add a reply
   splashify ticket <id> close                       Close the ticket
+
+Track expenses (mirrors /settings/track-expenses — read-only):
+  splashify expenses                                Summary (default period 30d)
+  splashify expenses summary    [--period 7d|30d|3m|6m|all]
+  splashify expenses categories [--period …]        Category breakdown only
+  splashify expenses countries  [--period …]        Top countries only
+  splashify expenses trends     [--period …]        Daily deduction series
+  splashify expenses logs       [--period …] [--limit N (max 500)]
+                                [--category marketing|utility|authentication|rcs|call|broadcast_deduction|broadcast_refund]
+                                [--country IN] [--free-trial true|false]
+  splashify expenses export     [--period …] [--limit N] [--out file.csv]
+                                                    Same shape as the page's Export CSV
 
 Calling (mirrors /calling — subscription + balance preflight on sends/initiates):
   splashify calling                                     Overview (default)
