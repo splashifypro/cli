@@ -107,6 +107,8 @@ func main() {
 		err = cmdFlows(args[1:])
 	case "flow":
 		err = cmdFlow(args[1:])
+	case "activity", "activity-logs", "logs":
+		err = cmdActivity(args[1:])
 	case "templates":
 		err = cmdTemplates(args[1:])
 	case "template":
@@ -327,6 +329,15 @@ Team / Agents (mirrors /settings/agents):
   splashify team set-role <member_id> agent | manager
   splashify team set-permissions <member_id> [--all … | --permissions … | --rw … | --read … | --none …]
   splashify team delete <member_id>
+
+Activity logs (owner-only, read-only):
+  splashify activity                        Latest 100 logs
+  splashify activity --limit 200            Custom limit
+  splashify activity --action login         Filter by action
+  splashify activity --entity contact       Filter by entity type
+  splashify activity --entity contact --entity-id <id>
+  splashify activity --actor <user_id>      Filter by actor
+  splashify activity --search "john"        Client-side text search
 
 Broadcasts:
   splashify broadcasts
