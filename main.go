@@ -111,6 +111,8 @@ func main() {
 		err = cmdActivity(args[1:])
 	case "credits", "credit", "ai-credits":
 		err = cmdCredits(args[1:])
+	case "email":
+		err = cmdEmail(args[1:])
 	case "templates":
 		err = cmdTemplates(args[1:])
 	case "template":
@@ -347,6 +349,41 @@ AI / Voice AI credits (read-only):
   splashify credits transactions            AI credit transaction history
   splashify credits voice                   Voice AI rate, balance, trial, available minutes
   splashify credits agents                  Voice AI agents
+
+Email marketing (full surface — /email + /settings/email-domain):
+  splashify email                                   Dashboard stats (default)
+  splashify email stats                             Dashboard stats
+  splashify email domains                           List authenticated sender domains
+  splashify email domain <domain>                   Show one domain (DKIM/SPF/DMARC)
+  splashify email domain add example.com            Add a domain
+  splashify email domain verify example.com         Re-check DNS for verification
+  splashify email domain delete example.com         Remove a domain
+  splashify email templates                         List email templates
+  splashify email template <id>                     Show one template
+  splashify email template create --name --subject --file ./template.json
+  splashify email template update <id> [--name] [--subject] [--file|--data]
+  splashify email template delete <id>
+  splashify email template preview --file ./template.json [--vars '{…}']
+  splashify email audience                          Audience stats (default)
+  splashify email audience stats                    Audience stats
+  splashify email audience contacts [--status] [--search]
+  splashify email audience contact <id>             Show one contact
+  splashify email audience contact add --emails "a@x.com,b@x.com" [--metadata '{…}'] [--segments id1,id2]
+  splashify email audience contact update <id> [--status] [--metadata]
+  splashify email audience contact delete <id>
+  splashify email audience segments                 List segments
+  splashify email audience segment <id>             Show one segment (list-and-filter)
+  splashify email audience segment create --name [--description]
+  splashify email audience segment update <id> [--name] [--description]
+  splashify email audience segment delete <id>
+  splashify email audience segment <id> add-contacts <id1>,<id2>,…
+  splashify email audience segment <id> remove-contacts <id1>,<id2>,…
+  splashify email campaigns                         List campaigns
+  splashify email campaign <id>                     Show one campaign
+  splashify email campaign create --name --template-id --from-name --from-email \
+                                  [--reply-to] [--segment-ids|--contact-ids] [--scheduled-at]
+  splashify email campaign send <id>
+  splashify email campaign cancel <id>
 
 Broadcasts:
   splashify broadcasts
