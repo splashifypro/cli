@@ -109,6 +109,8 @@ func main() {
 		err = cmdFlow(args[1:])
 	case "activity", "activity-logs", "logs":
 		err = cmdActivity(args[1:])
+	case "credits", "credit", "ai-credits":
+		err = cmdCredits(args[1:])
 	case "templates":
 		err = cmdTemplates(args[1:])
 	case "template":
@@ -338,6 +340,13 @@ Activity logs (owner-only, read-only):
   splashify activity --entity contact --entity-id <id>
   splashify activity --actor <user_id>      Filter by actor
   splashify activity --search "john"        Client-side text search
+
+AI / Voice AI credits (read-only):
+  splashify credits                         Consolidated: AI credits + voice AI rate + agents
+  splashify credits ai                      AI credit balance and info
+  splashify credits transactions            AI credit transaction history
+  splashify credits voice                   Voice AI rate, balance, trial, available minutes
+  splashify credits agents                  Voice AI agents
 
 Broadcasts:
   splashify broadcasts
