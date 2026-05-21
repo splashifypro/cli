@@ -87,17 +87,17 @@ func cmdBroadcast(args []string) error {
 	case "export":
 		return cmdBroadcastExport(id, args[2:])
 	case "cancel":
-		if err := preflightBroadcast(false /*requireBalance*/); err != nil {
+		if err := preflightSend("broadcasts",false /*requireBalance*/); err != nil {
 			return err
 		}
 		return runReq("POST", "/app/broadcasts/"+id+"/cancel", nil)
 	case "restart":
-		if err := preflightBroadcast(true); err != nil {
+		if err := preflightSend("broadcasts",true); err != nil {
 			return err
 		}
 		return runReq("POST", "/app/broadcasts/"+id+"/restart", nil)
 	case "send-now":
-		if err := preflightBroadcast(true); err != nil {
+		if err := preflightSend("broadcasts",true); err != nil {
 			return err
 		}
 		return runReq("POST", "/app/broadcasts/"+id+"/send-now", nil)
@@ -215,7 +215,7 @@ func cmdBroadcastCreate(args []string) error {
 
 	// Preflight — subscription + non-zero wallet.
 	if !*yes {
-		if err := preflightBroadcast(true); err != nil {
+		if err := preflightSend("broadcasts",true); err != nil {
 			return err
 		}
 	}
@@ -292,7 +292,7 @@ func cmdBroadcastRebroadcast(id string, args []string) error {
 	}
 
 	if !*yes {
-		if err := preflightBroadcast(true); err != nil {
+		if err := preflightSend("broadcasts",true); err != nil {
 			return err
 		}
 	}
@@ -322,24 +322,26 @@ func cmdBroadcastRebroadcast(id string, args []string) error {
 
 // ─── preflight ───────────────────────────────────────────────────────────────
 //
-// preflightBroadcast runs before any broadcast-creating command. Two checks:
+// preflightSend runs before any command that triggers actual sends/charges
+// (broadcast create / send-now / restart / rebroadcast, call initiate, the
+// calling send-* template-message commands). Two checks:
 //
 //  1. /app/developer/cli-eligibility — same gate cmdConnect uses. Refuses
 //     with the documented "upgrade your plan" / "no WABA" / "suspended"
-//     messages. SPLASHIFY_SKIP_ELIGIBILITY=1 still bypasses (consistent
-//     with the connect-time gate).
+//     messages. SPLASHIFY_SKIP_ELIGIBILITY=1 still bypasses.
 //
 //  2. /app/wallet/info — fetches the user's wallet balance. When
 //     requireBalance is true we refuse if wallet_amount <= 0; otherwise
 //     we just show the current balance as context.
 //
-// The backend always re-enforces both (subscription-active middleware on
-// /app/broadcasts/*, and walletBilling.CheckBalance at message-send time
-// returning "Insufficient balance" 4xx) — this preflight is for fast,
-// friendly UX, not security.
-func preflightBroadcast(requireBalance bool) error {
+// `action` is the human-readable feature name woven into the refusal
+// messages ("broadcasts", "calls", "templated call messages"). The
+// backend always re-enforces both (subscription middleware and
+// walletBilling.CheckBalance returning "Insufficient balance" 4xx) — this
+// preflight is for fast, friendly UX, not security.
+func preflightSend(action string, requireBalance bool) error {
 	if v := os.Getenv("SPLASHIFY_SKIP_PREFLIGHT"); v != "" && v != "0" && v != "false" {
-		fmt.Fprintln(os.Stderr, "note: SPLASHIFY_SKIP_PREFLIGHT is set — skipping broadcast preflight")
+		fmt.Fprintln(os.Stderr, "note: SPLASHIFY_SKIP_PREFLIGHT is set — skipping preflight")
 		return nil
 	}
 
@@ -359,15 +361,15 @@ func preflightBroadcast(requireBalance bool) error {
 				if url == "" {
 					url = "https://app.splashifypro.com/settings/subscriptions"
 				}
-				return fmt.Errorf(`broadcasts are unavailable — your trial has ended and there is no active paid plan on this account.
+				return fmt.Errorf(`%s are unavailable — your trial has ended and there is no active paid plan on this account.
 
   Upgrade your plan:  %s
 
-  Once a plan is active, retry the command.`, url)
+  Once a plan is active, retry the command.`, action, url)
 			case "no_waba":
-				return fmt.Errorf("broadcasts are unavailable — connect a WhatsApp Business Account first (https://app.splashifypro.com → WhatsApp → Connect Number)")
+				return fmt.Errorf("%s are unavailable — connect a WhatsApp Business Account first (https://app.splashifypro.com → WhatsApp → Connect Number)", action)
 			case "account_suspended":
-				return fmt.Errorf("broadcasts are unavailable — your account is not active. Contact support")
+				return fmt.Errorf("%s are unavailable — your account is not active. Contact support", action)
 			}
 		}
 	}
@@ -375,18 +377,15 @@ func preflightBroadcast(requireBalance bool) error {
 	// 2. Wallet balance
 	walletRaw, err := api.callRaw("GET", "/app/wallet/info", nil)
 	if err != nil {
-		// Don't block on wallet fetch failures — the backend will reject
-		// the actual send if the balance is too low.
 		fmt.Fprintln(os.Stderr, "note: could not fetch wallet balance —", err)
 		return nil
 	}
 	var wallet struct {
-		WalletAmount  float64 `json:"wallet_amount"`
-		SpentBalance  float64 `json:"spent_balance"`
-		CurrencyCode  string  `json:"currency_code"`
+		WalletAmount float64 `json:"wallet_amount"`
+		SpentBalance float64 `json:"spent_balance"`
+		CurrencyCode string  `json:"currency_code"`
 	}
 	if err := json.Unmarshal(walletRaw, &wallet); err != nil {
-		// Tolerate shape drift; just emit the raw response and move on.
 		fmt.Fprintln(os.Stderr, "note: wallet response unparsable, continuing")
 		return nil
 	}
@@ -396,10 +395,10 @@ func preflightBroadcast(requireBalance bool) error {
 	}
 	fmt.Fprintf(os.Stderr, "Wallet balance: %s%.2f\n", sym, wallet.WalletAmount)
 	if requireBalance && wallet.WalletAmount <= 0 {
-		return fmt.Errorf(`broadcasts are unavailable — your wallet balance is %s%.2f.
+		return fmt.Errorf(`%s are unavailable — your wallet balance is %s%.2f.
 
   Recharge: https://app.splashifypro.com/dashboard
-  (Or run with --yes to skip this soft-check; the backend still enforces it per-message.)`, sym, wallet.WalletAmount)
+  (Or run with --yes to skip this soft-check; the backend still enforces it per-message.)`, action, sym, wallet.WalletAmount)
 	}
 	return nil
 }

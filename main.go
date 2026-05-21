@@ -113,6 +113,10 @@ func main() {
 		err = cmdCredits(args[1:])
 	case "email":
 		err = cmdEmail(args[1:])
+	case "calling":
+		err = cmdCalling(args[1:])
+	case "call":
+		err = cmdCall(args[1:])
 	case "templates":
 		err = cmdTemplates(args[1:])
 	case "template":
@@ -349,6 +353,27 @@ AI / Voice AI credits (read-only):
   splashify credits transactions            AI credit transaction history
   splashify credits voice                   Voice AI rate, balance, trial, available minutes
   splashify credits agents                  Voice AI agents
+
+Calling (mirrors /calling — subscription + balance preflight on sends/initiates):
+  splashify calling                                     Overview (default)
+  splashify calling settings                            GET calling settings
+  splashify calling settings update --data '{…}'        PUT calling settings (raw JSON, wrapped as {"calling":…})
+  splashify calling analytics [--start-time --end-time --granularity --dimensions]
+  splashify calling calls [--search --status --agent --page --limit]
+  splashify call <call_id>                              Show one call
+  splashify call initiate --to "+91…"                   Backend-side dial (preflight)
+  splashify call upload-recording <call_id> <file>      Multipart upload
+  splashify calling permission-status --phone "+91…"
+  splashify calling permissions [--search --status --agent]
+  splashify calling templates                           List call templates
+  splashify calling template status --name <tpl>
+  splashify calling template create-call-button --name --body-text --button-label --phone-number [--language en]
+  splashify calling template create-permission --name --body-text [--language en]
+  splashify calling template set-default <template_id>
+  splashify calling send call-button --to --body-text --button-label --phone-number [--yes]
+  splashify calling send permission --to [--body-text | --type template --template '{…}'] [--yes]
+  splashify calling send template --to --name [--language] [--vars '["…"]'] [--yes]
+  splashify calling send permission-template --to --name [--language] [--yes]
 
 Email marketing (full surface — /email + /settings/email-domain):
   splashify email                                   Dashboard stats (default)
