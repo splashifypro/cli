@@ -117,6 +117,10 @@ func main() {
 		err = cmdCalling(args[1:])
 	case "call":
 		err = cmdCall(args[1:])
+	case "support", "tickets":
+		err = cmdSupport(args[1:])
+	case "ticket":
+		err = cmdTicket(args[1:])
 	case "templates":
 		err = cmdTemplates(args[1:])
 	case "template":
@@ -353,6 +357,17 @@ AI / Voice AI credits (read-only):
   splashify credits transactions            AI credit transaction history
   splashify credits voice                   Voice AI rate, balance, trial, available minutes
   splashify credits agents                  Voice AI agents
+
+Support tickets (mirrors /support):
+  splashify support                                 List every ticket (default)
+  splashify support list [--status open|in_progress|waiting_for_user|resolved|closed] [--search …]
+  splashify tickets                                 Alias for "support"
+  splashify ticket <id>                             Show one ticket (with replies)
+  splashify ticket create --title "…" --description "…" \
+                          --category bug|billing|feature_request|account|general \
+                          [--priority low|medium|high|urgent]
+  splashify ticket <id> reply "<message>"           Add a reply
+  splashify ticket <id> close                       Close the ticket
 
 Calling (mirrors /calling — subscription + balance preflight on sends/initiates):
   splashify calling                                     Overview (default)
