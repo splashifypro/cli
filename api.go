@@ -293,6 +293,30 @@ func (c *apiClient) revokeToken(id string) error {
 	return c.do(http.MethodDelete, "/app/developer/access-tokens/"+id, nil, nil)
 }
 
+// resolveSelfUserID returns the calling user's user_id by hitting /app/me.
+// Some endpoints (e.g. /app/meta-ads/:user_id/...) need the caller's id as
+// a path parameter — we resolve it once here so CLI callers don't have to.
+func resolveSelfUserID(api *apiClient) (string, error) {
+	var r struct {
+		Success bool   `json:"success"`
+		UserID  string `json:"user_id"`
+		ID      string `json:"id"`
+		User    struct {
+			UserID string `json:"user_id"`
+			ID     string `json:"id"`
+		} `json:"user"`
+	}
+	if err := api.do("GET", "/app/me", nil, &r); err != nil {
+		return "", fmt.Errorf("resolve self user_id: %w", err)
+	}
+	for _, candidate := range []string{r.UserID, r.ID, r.User.UserID, r.User.ID} {
+		if candidate != "" {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("could not resolve user_id from /app/me — token may be invalid")
+}
+
 // eligibilityResponse mirrors GET /app/developer/cli-eligibility. The backend
 // returns 200 OK in every case; the CLI inspects `Eligible` and `Reason`
 // rather than parsing HTTP status codes.

@@ -129,6 +129,16 @@ func main() {
 		err = cmdTemplate(args[1:])
 	case "rcs":
 		err = cmdRCS(args[1:])
+	case "ai-agents":
+		err = cmdAIAgents(args[1:])
+	case "ai-agent":
+		err = cmdAIAgent(args[1:])
+	case "integrations":
+		err = cmdIntegrations(args[1:])
+	case "allowed-ips", "ip-allowlist", "ips":
+		err = cmdAllowedIPs(args[1:])
+	case "ctwa", "meta-ads":
+		err = cmdCTWA(args[1:])
 	case "analytics":
 		err = cmdAnalytics(args[1:])
 	case "wallet":
@@ -481,6 +491,56 @@ RCS templates (mirrors /templates/rcs/create):
                                   --data '{"type":"card","card":{…}}'
   splashify rcs templates create --name "promo" --type carousel --file ./carousel.json
   splashify rcs templates delete <template_id>
+
+AI Agents (mirrors /ai-agents):
+  splashify ai-agents                       List every AI agent
+  splashify ai-agent <agent_id>             Show one
+  splashify ai-agent create --name "Bot" --agent-type support \
+                            [--channel whatsapp|instagram] [--industry …] \
+                            [--use-case …] [--role …] [--goal …] [--instructions …]
+  splashify ai-agent update <id> [--name] [--role] [--goal] [--instructions] \
+                                  [--status] [--tone] [--ai-provider] [--ai-model] \
+                                  [--temperature 0.7] [--processing-msg true|false]
+  splashify ai-agent set-default <id> | unset-default <id>
+  splashify ai-agent delete <id>
+  splashify ai-agent knowledge <id> [list]              List knowledge files
+  splashify ai-agent knowledge <id> upload <file>       .pdf | .docx | .md | .txt (max 15MB)
+  splashify ai-agent knowledge <id> delete <file_id>
+
+Integrations (mirrors /integrations):
+  splashify integrations                    List per-slug configs (default view)
+  splashify integrations configs            Same as default
+  splashify integrations config <slug>      Show one config
+  splashify integrations config <slug> save [--enabled true|false] [--template <id>] \
+                                             [--template-name] [--template-language] \
+                                             [--config '{…}'] [--vars '{…}'] \
+                                             [--phone-field …] [--events '{…}']
+  splashify integrations config <slug> delete
+  splashify integrations accounts           List third-party OAuth connections
+  splashify integrations account <id> disconnect
+  splashify integrations token              Mint a connect-token for OAuth callbacks
+  splashify integrations logs [--limit N] [--slug <slug>]
+  splashify integrations log <log_id>
+
+IP allowlist (paid — mirrors /settings/allowed-ips):
+  splashify allowed-ips                     List allowlist entries
+  splashify allowed-ips add --name "Office" --mode single --ip 203.0.113.4
+  splashify allowed-ips add --name "VPN" --mode range \
+                            --start 10.0.0.0 --end 10.0.0.255
+  splashify allowed-ips delete <entry_id>
+
+CTWA (Click-to-WhatsApp Ads — mirrors /settings/ctwa):
+  splashify ctwa                            Show CAPI status (default)
+  splashify ctwa capi                       Show CAPI config
+  splashify ctwa capi save [--dataset-id] [--lead-enabled] [--lead-trigger] \
+                            [--lead-tag] [--purchase-enabled] [--purchase-trigger] \
+                            [--purchase-tag] [--purchase-currency] [--purchase-value]
+  splashify ctwa capi send-event --event-type lead|purchase --phone +91… \
+                                  [--value 99.99] [--currency INR]
+  splashify ctwa exchange-code --code <code> [--granted-scopes '[…]'] [--redirect-uri …]
+  splashify ctwa refresh-token              Refresh the stored Meta token
+  splashify ctwa ads                        List ads on the connected account
+  splashify ctwa ad <ad_id>                 Show one ad
 
 Other:
   splashify analytics [trends]
