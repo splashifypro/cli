@@ -265,19 +265,72 @@ func cmdTemplateDelete(args []string) error {
 
 // cmdRCS dispatches the RCS-specific subtree. RCS has its own templates
 // surface, separate from WhatsApp — namespacing under `rcs templates` /
-// `rcs template <id>` keeps the two from colliding.
+// `rcs template <id>` keeps the two from colliding. `send` is the
+// free-form RCS message path (the /messages page's RCS composer); the
+// template send uses `send-template`.
 func cmdRCS(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: splashify rcs <templates|template> …")
+		return fmt.Errorf("usage: splashify rcs <send|send-template|templates|template> …")
 	}
 	switch args[0] {
 	case "templates":
 		return cmdRCSTemplates(args[1:])
 	case "template":
 		return cmdRCSTemplate(args[1:])
+	case "send", "send-text":
+		return cmdRCSSendText(args[1:])
+	case "send-template":
+		return cmdRCSSendTemplate(args[1:])
 	default:
 		return fmt.Errorf("unknown rcs subcommand: %s\nrun: splashify rcs", args[0])
 	}
+}
+
+// cmdRCSSendText mirrors api.sendRCSText from /messages — the RCS
+// composer's plain "Send" button. The backend bills via the RCS pricing
+// table (separate from WA), so this is a paid send.
+func cmdRCSSendText(args []string) error {
+	fs := flag.NewFlagSet("rcs send", flag.ContinueOnError)
+	to := fs.String("to", "", "recipient phone with country code (+91…)")
+	text := fs.String("text", "", "message text")
+	yes := fs.Bool("yes", false, "skip the balance soft-check")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *to == "" || *text == "" {
+		return fmt.Errorf(`usage: splashify rcs send --to "+91…" --text "…"`)
+	}
+	if !*yes {
+		if err := preflightSend("RCS messages", true); err != nil {
+			return err
+		}
+	}
+	return runReq("POST", "/app/rcs/messages/send-text", map[string]any{
+		"to": *to, "text": *text,
+	})
+}
+
+// cmdRCSSendTemplate mirrors api.sendRCSTemplate from the
+// RCSTemplateSendDialog on /messages. Required: --to + --template-id.
+func cmdRCSSendTemplate(args []string) error {
+	fs := flag.NewFlagSet("rcs send-template", flag.ContinueOnError)
+	to := fs.String("to", "", "recipient phone with country code (+91…)")
+	tplID := fs.String("template-id", "", "RCS template_id (UUID) — see `splashify rcs templates`")
+	yes := fs.Bool("yes", false, "skip the balance soft-check")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *to == "" || *tplID == "" {
+		return fmt.Errorf(`usage: splashify rcs send-template --to "+91…" --template-id <uuid>`)
+	}
+	if !*yes {
+		if err := preflightSend("RCS template messages", true); err != nil {
+			return err
+		}
+	}
+	return runReq("POST", "/app/rcs/messages/send-template", map[string]any{
+		"to": *to, "template_id": *tplID,
+	})
 }
 
 // ─── rcs templates (plural) ──────────────────────────────────────────────────

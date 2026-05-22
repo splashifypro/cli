@@ -61,22 +61,28 @@ func withQuery(path string, params map[string]string) string {
 
 func cmdMessage(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: splashify message <send|template|media>")
+		return fmt.Errorf("usage: splashify message <send|template|media|location|reaction|contact|typing>")
 	}
 	switch args[0] {
 	case "send":
 		fs := flag.NewFlagSet("message send", flag.ContinueOnError)
 		to := fs.String("to", "", "recipient phone, with country code (+91…)")
 		text := fs.String("text", "", "message text")
+		// `--context-message-id` carries the wa_message_id you're replying
+		// to so the recipient's inbox shows the quoted bubble — same effect
+		// as tapping "Reply" on a message in the /messages page.
+		contextID := fs.String("context-message-id", "", "wa_message_id you're replying to (optional)")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
 		if *to == "" || *text == "" {
-			return fmt.Errorf("usage: splashify message send --to +91… --text \"…\"")
+			return fmt.Errorf("usage: splashify message send --to +91… --text \"…\" [--context-message-id <wa_id>]")
 		}
-		return runReq("POST", "/app/messages/send-text", map[string]any{
-			"to": *to, "text": *text,
-		})
+		body := map[string]any{"to": *to, "text": *text}
+		if *contextID != "" {
+			body["context_message_id"] = *contextID
+		}
+		return runReq("POST", "/app/messages/send-text", body)
 
 	case "template":
 		fs := flag.NewFlagSet("message template", flag.ContinueOnError)
@@ -137,11 +143,15 @@ func cmdMessage(args []string) error {
 		murl := fs.String("url", "", "public URL of the media file")
 		caption := fs.String("caption", "", "optional caption")
 		filename := fs.String("filename", "", "filename hint (documents only)")
+		// `--voice` flips the audio render to a WhatsApp voice-note bubble
+		// (single-tap play, no track scrubber). Only meaningful for
+		// --type audio; backend ignores it for other types.
+		voice := fs.String("voice", "", "true to render an audio file as a voice note (audio only)")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
 		if *to == "" || *mtype == "" || *murl == "" {
-			return fmt.Errorf("usage: splashify message media --to +91… --type image --url <url> [--caption …]")
+			return fmt.Errorf("usage: splashify message media --to +91… --type image --url <url> [--caption …] [--voice true]")
 		}
 		body := map[string]any{"to": *to, "media_type": *mtype, "media_url": *murl}
 		if *caption != "" {
@@ -150,10 +160,125 @@ func cmdMessage(args []string) error {
 		if *filename != "" {
 			body["filename"] = *filename
 		}
+		if *voice != "" {
+			b, err := parseBool(*voice)
+			if err != nil {
+				return fmt.Errorf("--voice must be true or false")
+			}
+			body["voice"] = b
+		}
 		return runReq("POST", "/app/messages/send-media", body)
 
+	case "location":
+		// Mirrors api.sendLocationMessage on the page — drops a pin in the
+		// recipient's WhatsApp thread. lat/lng are required; name+address
+		// show as the label above the map.
+		fs := flag.NewFlagSet("message location", flag.ContinueOnError)
+		to := fs.String("to", "", "recipient phone")
+		lat := fs.Float64("lat", 0, "latitude (required)")
+		lng := fs.Float64("lng", 0, "longitude (required)")
+		name := fs.String("name", "", "optional place name shown above the pin")
+		address := fs.String("address", "", "optional address shown under the place name")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		passed := map[string]bool{}
+		fs.Visit(func(f *flag.Flag) { passed[f.Name] = true })
+		if *to == "" || !passed["lat"] || !passed["lng"] {
+			return fmt.Errorf("usage: splashify message location --to +91… --lat 12.97 --lng 77.59 [--name …] [--address …]")
+		}
+		body := map[string]any{"to": *to, "latitude": *lat, "longitude": *lng}
+		if *name != "" {
+			body["name"] = *name
+		}
+		if *address != "" {
+			body["address"] = *address
+		}
+		return runReq("POST", "/app/messages/send-location", body)
+
+	case "reaction", "react":
+		// Mirrors api.sendReactionMessage — attaches an emoji reaction to an
+		// existing wa_message_id. Pass --emoji "" to remove the reaction.
+		fs := flag.NewFlagSet("message reaction", flag.ContinueOnError)
+		to := fs.String("to", "", "recipient phone")
+		msgID := fs.String("message-id", "", "wa_message_id you're reacting to (required)")
+		emoji := fs.String("emoji", "", `emoji, e.g. "👍" — pass "" to clear`)
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		passed := map[string]bool{}
+		fs.Visit(func(f *flag.Flag) { passed[f.Name] = true })
+		if *to == "" || *msgID == "" || !passed["emoji"] {
+			return fmt.Errorf(`usage: splashify message reaction --to +91… --message-id <wa_id> --emoji "👍"`)
+		}
+		return runReq("POST", "/app/messages/send-reaction", map[string]any{
+			"to": *to, "message_id": *msgID, "emoji": *emoji,
+		})
+
+	case "contact", "contact-card", "vcard":
+		// Mirrors api.sendContactMessage — Meta's contacts-type message.
+		// Accepts the canonical contacts[] array via --contacts (inline
+		// JSON) or --file (path to a JSON file). The contacts array must
+		// match Meta's shape:
+		//   [{"name":{"formatted_name":"Jane Doe","first_name":"Jane"},
+		//     "phones":[{"phone":"+91…","type":"WORK","wa_id":"91…"}]}]
+		fs := flag.NewFlagSet("message contact", flag.ContinueOnError)
+		to := fs.String("to", "", "recipient phone")
+		raw := fs.String("contacts", "", "inline JSON: array of Meta contact objects")
+		file := fs.String("file", "", "path to a JSON file containing the contacts array")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *to == "" {
+			return fmt.Errorf(`usage: splashify message contact --to +91… --contacts '[…]'
+       splashify message contact --to +91… --file ./contact.json`)
+		}
+		var contactsJSON string
+		switch {
+		case *raw != "":
+			contactsJSON = *raw
+		case *file != "":
+			b, err := os.ReadFile(*file)
+			if err != nil {
+				return fmt.Errorf("read --file: %w", err)
+			}
+			contactsJSON = string(b)
+		default:
+			return fmt.Errorf("must pass --contacts '[…]' or --file <path>")
+		}
+		var contacts []map[string]any
+		if err := json.Unmarshal([]byte(contactsJSON), &contacts); err != nil {
+			// Allow a single contact object — wrap it in an array.
+			var one map[string]any
+			if err2 := json.Unmarshal([]byte(contactsJSON), &one); err2 == nil {
+				contacts = []map[string]any{one}
+			} else {
+				return fmt.Errorf("contacts must be a JSON array (or object): %w", err)
+			}
+		}
+		if len(contacts) == 0 {
+			return fmt.Errorf("at least one contact is required")
+		}
+		return runReq("POST", "/app/messages/send-contact", map[string]any{
+			"to": *to, "contacts": contacts,
+		})
+
+	case "typing", "typing-indicator":
+		// Mirrors api.sendTypingIndicator — surfaces a "…" bubble on the
+		// recipient's side. Cheap (no wallet cost) but each call expires
+		// quickly; debounce on the caller's side.
+		fs := flag.NewFlagSet("message typing", flag.ContinueOnError)
+		to := fs.String("to", "", "recipient phone (required)")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *to == "" {
+			return fmt.Errorf("usage: splashify message typing --to +91…")
+		}
+		return runReq("POST", "/app/messages/typing-indicator", map[string]any{"to": *to})
+
 	default:
-		return fmt.Errorf("unknown message subcommand: %s", args[0])
+		return fmt.Errorf("unknown message subcommand: %s\nrun: splashify message", args[0])
 	}
 }
 
@@ -161,24 +286,60 @@ func cmdMessage(args []string) error {
 
 func cmdConversations(args []string) error {
 	fs := flag.NewFlagSet("conversations", flag.ContinueOnError)
-	page := fs.String("page", "1", "page number")
-	size := fs.String("page-size", "20", "items per page")
+	page := fs.String("page", "", "page number")
+	// --page-size kept as an alias of --limit so existing v0.1.x scripts
+	// keep working. Both feed the backend's `limit` parameter.
+	size := fs.String("page-size", "", "items per page (alias of --limit)")
+	limit := fs.String("limit", "", "items per page")
 	status := fs.String("status", "", "filter: open, resolved")
+	channel := fs.String("channel", "", "whatsapp | rcs | instagram (matches the inbox tab)")
+	search := fs.String("search", "", "search by contact name / phone / last message body")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	effLimit := *limit
+	if effLimit == "" {
+		effLimit = *size
+	}
 	return runReq("GET", withQuery("/app/messages/conversations", map[string]string{
-		"page": *page, "page_size": *size, "status": *status,
+		"page":    *page,
+		"limit":   effLimit,
+		"status":  *status,
+		"channel": *channel,
+		"search":  *search,
 	}), nil)
 }
 
 func cmdConversation(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: splashify conversation <id> [resolve]")
+		return fmt.Errorf("usage: splashify conversation <id> [resolve|reopen|assign --to <member_id>]")
 	}
 	id := args[0]
-	if len(args) > 1 && args[1] == "resolve" {
-		return runReq("POST", "/app/messages/conversations/"+id+"/resolve", nil)
+	if len(args) > 1 {
+		switch args[1] {
+		case "resolve", "close":
+			return runReq("POST", "/app/messages/conversations/"+id+"/resolve", nil)
+		case "reopen", "open":
+			return runReq("POST", "/app/messages/conversations/"+id+"/reopen", nil)
+		case "assign":
+			// `--to` may be empty — unassigns the conversation. Matches the
+			// /messages page's "Unassign" affordance.
+			fs := flag.NewFlagSet("conversation assign", flag.ContinueOnError)
+			to := fs.String("to", "", "member_id / user_id to assign to (empty = unassign)")
+			if err := fs.Parse(args[2:]); err != nil {
+				return err
+			}
+			passed := map[string]bool{}
+			fs.Visit(func(f *flag.Flag) { passed[f.Name] = true })
+			if !passed["to"] {
+				return fmt.Errorf("usage: splashify conversation <id> assign --to <member_id>  (pass --to '' to unassign)")
+			}
+			return runReq("POST", "/app/messages/conversations/"+id+"/assign", map[string]any{
+				"assigned_to": *to,
+			})
+		default:
+			return fmt.Errorf("unknown conversation action: %s\nrun: splashify conversation", args[1])
+		}
 	}
 	return runReq("GET", "/app/messages/conversations/"+id, nil)
 }
@@ -205,7 +366,7 @@ func cmdContacts(args []string) error {
 
 func cmdContact(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: splashify contact <id|create|delete|tag|block|unblock> …")
+		return fmt.Errorf("usage: splashify contact <id|create|update|delete|tag|untag|block|unblock> …")
 	}
 	switch args[0] {
 	case "create":
@@ -257,6 +418,87 @@ func cmdContact(args []string) error {
 		return runReq("POST", "/app/contacts/"+args[1]+"/tags", map[string]any{
 			"tags": splitTags(*tags),
 		})
+
+	case "untag", "remove-tags":
+		// Mirrors api.removeContactTags — the backend's DELETE accepts the
+		// tags as a comma-separated query param, not a body. Same shape as
+		// the page's handleRemoveTag.
+		fs := flag.NewFlagSet("contact untag", flag.ContinueOnError)
+		tags := fs.String("tags", "", "comma-separated tags to remove, e.g. vip,lead")
+		if len(args) < 2 {
+			return fmt.Errorf("usage: splashify contact untag <id> --tags vip,lead")
+		}
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+		if *tags == "" {
+			return fmt.Errorf("--tags is required")
+		}
+		// Re-encode to handle commas + spaces consistently.
+		parts := splitTags(*tags)
+		return runReq("DELETE",
+			"/app/contacts/"+args[1]+"/tags?tags="+url.QueryEscape(strings.Join(parts, ",")),
+			nil)
+
+	case "update", "edit", "patch":
+		// Mirrors api.updateContact — sparse PUT, only the flags the user
+		// explicitly passed get sent. Covers the /messages page surfaces
+		// for notes (handleSaveNotes), opt-out toggle (handleOptToggle),
+		// and the contact sidebar's display-name / email / website / tags
+		// edits. --data accepts a raw JSON object that overlays last for
+		// any fields the named flags don't cover (e.g. column_data).
+		if len(args) < 2 {
+			return fmt.Errorf("usage: splashify contact update <id> [--name …] [--email …] [--website …] [--notes …] [--opted-out true|false] [--tags vip,lead] [--data '{…}']")
+		}
+		fs := flag.NewFlagSet("contact update", flag.ContinueOnError)
+		name := fs.String("name", "", "display name (display_name)")
+		email := fs.String("email", "", "email")
+		website := fs.String("website", "", "website URL (website_url)")
+		notes := fs.String("notes", "", "free-text notes")
+		optedOut := fs.String("opted-out", "", "true|false — marketing opt-out flag (has_opted_out)")
+		tags := fs.String("tags", "", "comma-separated tags (replaces the tag set)")
+		raw := fs.String("data", "", `raw JSON merged on top of the named fields, e.g. '{"column_data":"{…}"}'`)
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+		passed := map[string]bool{}
+		fs.Visit(func(f *flag.Flag) { passed[f.Name] = true })
+		if len(passed) == 0 {
+			return fmt.Errorf("usage: splashify contact update <id> [--name …] [--email …] [--website …] [--notes …] [--opted-out true|false] [--tags vip,lead] [--data '{…}']")
+		}
+		body := map[string]any{}
+		if passed["name"] {
+			body["display_name"] = *name
+		}
+		if passed["email"] {
+			body["email"] = *email
+		}
+		if passed["website"] {
+			body["website_url"] = *website
+		}
+		if passed["notes"] {
+			body["notes"] = *notes
+		}
+		if passed["opted-out"] {
+			b, err := parseBool(*optedOut)
+			if err != nil {
+				return fmt.Errorf("--opted-out must be true or false")
+			}
+			body["has_opted_out"] = b
+		}
+		if passed["tags"] {
+			body["tags"] = splitTags(*tags)
+		}
+		if *raw != "" {
+			var extra map[string]any
+			if err := json.Unmarshal([]byte(*raw), &extra); err != nil {
+				return fmt.Errorf("--data must be a JSON object: %w", err)
+			}
+			for k, v := range extra {
+				body[k] = v
+			}
+		}
+		return runReq("PUT", "/app/contacts/"+args[1], body)
 
 	case "block":
 		if len(args) < 2 {

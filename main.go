@@ -184,20 +184,48 @@ OpenClaw:
   splashify link openclaw        Register the splashify MCP server with OpenClaw
   splashify mcp-config           Print the OpenClaw MCP config (no changes made)
 
-Messaging:
-  splashify message send --to +91… --text "…"
+Messaging — mirrors /messages (WhatsApp):
+  splashify message send --to +91… --text "…" [--context-message-id <wa_id>]
   splashify message template --to +91… --name <tpl> [--lang en] [--vars '[…]']
-  splashify message media --to +91… --type image --url <url> [--caption …]
-  splashify conversations [--page N] [--status open|resolved]
-  splashify conversation <id> [resolve]
+  splashify message media --to +91… --type image --url <url> [--caption …] [--voice true]
+  splashify message location --to +91… --lat 12.97 --lng 77.59 [--name …] [--address …]
+  splashify message reaction --to +91… --message-id <wa_id> --emoji "👍"
+  splashify message contact --to +91… --contacts '[…]'  (or --file ./contact.json)
+  splashify message typing --to +91…                  (typing-indicator bubble)
+  splashify conversations [--channel whatsapp|rcs|instagram] [--status open|resolved] \
+                          [--search …] [--page N] [--limit N]
+  splashify conversation <id>                          Show one conversation + messages
+  splashify conversation <id> resolve | reopen
+  splashify conversation <id> assign --to <member_id>  (pass --to "" to unassign)
   splashify unread
+
+Messaging — RCS:
+  splashify rcs send --to +91… --text "…"              Free-form RCS message
+  splashify rcs send-template --to +91… --template-id <uuid>
+  splashify rcs templates                              List RCS templates
+  splashify rcs template <id> [check-status]
+
+Messaging — Instagram DMs:
+  splashify instagram dm --conversation <id> --message "…" \
+                         [--media-url … --media-type image|video|audio]
+  splashify instagram window --conversation <id>       24h / 7d reply window
+
+Calling — call permission + backend-side dial:
+  splashify calling permission-status --phone "+91…"
+  splashify calling send permission --to +91… --body-text "…"        (interactive)
+  splashify calling send permission --to +91… --type template --template '{…}'
+  splashify calling send permission-template --to +91… --name <tpl> [--language en]
+  splashify call initiate --to +91…                    Backend-side dial
 
 Contacts:
   splashify contacts [--search …] [--tag …] [--page N]
   splashify contact <id>
   splashify contact create --phone +91… [--name …] [--email …]
+  splashify contact update <id> [--name …] [--email …] [--website …] [--notes …] \
+                                [--opted-out true|false] [--tags vip,lead] [--data '{…}']
   splashify contact delete|block|unblock <id>
-  splashify contact tag <id> --tags vip,lead
+  splashify contact tag <id> --tags vip,lead           Add tags
+  splashify contact untag <id> --tags vip,lead         Remove tags
 
 Account (read-only):
   splashify account                         Consolidated account details
