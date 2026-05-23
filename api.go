@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -210,6 +211,110 @@ func (c *apiClient) uploadFileWithFields(path, formField, filePath string, extra
 	}
 	return raw, nil
 }
+
+// streamSSE consumes a Server-Sent Events stream from /api/v1<path> and
+// pretty-prints each `data:` payload as JSON to stdout. It uses its own
+// http.Client with no timeout (SSE streams are long-lived) and respects
+// the stop callback to terminate early — used by `broadcast <id>
+// progress` to exit when the broadcast hits a terminal status.
+//
+//	baseURL  backend base URL (cfg.BaseURL)
+//	token    oc_live_ access token (cfg.Token)
+//	path     path under /api/v1 (e.g. /app/broadcasts/<id>/progress)
+//	once     if true, exit after the first event
+//	max      if >0, exit after this many events
+//	stop     called for each parsed event; return true to stop
+func streamSSE(baseURL, token, path string, once bool, max int, stop func(map[string]any) bool) error {
+	req, err := http.NewRequest(http.MethodGet, strings.TrimRight(baseURL, "/")+"/api/v1"+path, nil)
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("Cache-Control", "no-cache")
+
+	// No timeout — SSE streams are long-lived.
+	client := &http.Client{Timeout: 0}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("connect to stream: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		raw, _ := io.ReadAll(resp.Body)
+		return &apiError{status: resp.StatusCode, body: string(raw)}
+	}
+
+	// SSE framing: events are separated by blank lines; lines starting
+	// with `data:` carry the payload. We accumulate `data:` lines until
+	// the blank-line dispatcher fires.
+	reader := bufio.NewReader(resp.Body)
+	var dataBuf strings.Builder
+	count := 0
+	dispatch := func() error {
+		if dataBuf.Len() == 0 {
+			return nil
+		}
+		payload := dataBuf.String()
+		dataBuf.Reset()
+
+		raw := json.RawMessage(payload)
+		printJSON(raw)
+		count++
+
+		var parsed map[string]any
+		_ = json.Unmarshal([]byte(payload), &parsed)
+		if stop != nil && parsed != nil && stop(parsed) {
+			return errStreamDone
+		}
+		if once {
+			return errStreamDone
+		}
+		if max > 0 && count >= max {
+			return errStreamDone
+		}
+		return nil
+	}
+
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			// EOF on a clean stream is fine — flush whatever's buffered.
+			if err == io.EOF {
+				_ = dispatch()
+				return nil
+			}
+			return fmt.Errorf("read stream: %w", err)
+		}
+		line = strings.TrimRight(line, "\r\n")
+		if line == "" {
+			if derr := dispatch(); derr != nil {
+				if derr == errStreamDone {
+					return nil
+				}
+				return derr
+			}
+			continue
+		}
+		if strings.HasPrefix(line, ":") {
+			// SSE comment / keepalive — ignore.
+			continue
+		}
+		if strings.HasPrefix(line, "data:") {
+			payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+			if dataBuf.Len() > 0 {
+				dataBuf.WriteString("\n")
+			}
+			dataBuf.WriteString(payload)
+		}
+		// Other SSE fields (event:, id:, retry:) are not used by our
+		// /progress stream — drop them silently.
+	}
+}
+
+// errStreamDone is a sentinel used inside streamSSE's dispatch closure to
+// unwind the read loop cleanly without bubbling a real error to the user.
+var errStreamDone = fmt.Errorf("stream done")
 
 // printJSON writes a JSON value to stdout, indented for readability.
 func printJSON(raw json.RawMessage) {

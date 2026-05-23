@@ -10,6 +10,11 @@
 //	splashify link openclaw    register the splashify MCP server with OpenClaw
 //	splashify mcp-config       print the OpenClaw MCP config without applying it
 //	splashify doctor           diagnose the local setup
+//	splashify dashboard        consolidated home snapshot
+//	splashify profile          read / update the user's profile
+//	splashify username         manage the WhatsApp business username
+//	splashify company          read / update company details
+//	splashify maya             chat with the in-app AI assistant
 package main
 
 import (
@@ -145,6 +150,16 @@ func main() {
 		err = cmdWallet(args[1:])
 	case "api":
 		err = cmdAPI(args[1:])
+	case "profile":
+		err = cmdProfile(args[1:])
+	case "username":
+		err = cmdUsername(args[1:])
+	case "company", "company-details":
+		err = cmdCompany(args[1:])
+	case "dashboard", "home":
+		err = cmdDashboard(args[1:])
+	case "maya":
+		err = cmdMaya(args[1:])
 
 	case "version", "--version", "-v":
 		fmt.Println("splashify", version)
@@ -569,6 +584,43 @@ CTWA (Click-to-WhatsApp Ads — mirrors /settings/ctwa):
   splashify ctwa refresh-token              Refresh the stored Meta token
   splashify ctwa ads                        List ads on the connected account
   splashify ctwa ad <ad_id>                 Show one ad
+
+Account profile (mirrors /profile):
+  splashify profile                                Show current profile (/app/me)
+  splashify profile update --first-name "Alice" --last-name "Smith"
+  splashify profile change-password --current <old> --new <new>
+  splashify profile whatsapp send-otp --country-code +91 --mobile 9876543210
+  splashify profile whatsapp verify --country-code +91 --mobile 9876543210 --otp 123456
+  splashify profile picture ./avatar.png           Upload a new profile picture
+  splashify profile 2fa enable | disable           Toggle two-factor auth
+
+Business username (mirrors /settings/username):
+  splashify username                               Current username + status
+  splashify username suggestions                   Backend-suggested ideas
+  splashify username adopt mybrand                 Claim a username
+  splashify username delete                        Release the current username
+
+Company details (mirrors /settings/company-details):
+  splashify company                                Show company profile
+  splashify company update --company-name "Acme" --industry "SaaS / Technology" \
+                           --company-size 51-200 --website https://acme.com \
+                           --country IN --state KA --pincode 560001 --timezone Asia/Calcutta
+
+Dashboard / home (mirrors /dashboard):
+  splashify dashboard                              Consolidated snapshot (setup + WA + plan + wallet + credits + KYC)
+  splashify dashboard setup-status                 Setup checklist only
+  splashify dashboard whatsapp-status              WhatsApp + Meta status only
+  splashify dashboard kyc                          KYC verification status
+
+Maya (in-app AI assistant — mirrors the right-rail widget):
+  splashify maya chat "How do I create a broadcast?"
+  splashify maya chat --thread-id <id> "follow-up question"
+  splashify maya feedback --reply-id <id> --rating up|down [--comment "…"]
+
+Broadcast live progress (mirrors /broadcasts/<id>/progress):
+  splashify broadcast <id> progress                Follow SSE stream until terminal status
+  splashify broadcast <id> progress --once         Snapshot (first event, then exit)
+  splashify broadcast <id> progress --max 10       Stop after N events
 
 Other:
   splashify analytics [trends]

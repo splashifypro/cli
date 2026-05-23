@@ -84,6 +84,8 @@ func cmdBroadcast(args []string) error {
 		return cmdBroadcastMessages(id, args[2:])
 	case "cohorts", "cohort-counts":
 		return runReq("GET", "/app/broadcasts/"+id+"/cohort-counts", nil)
+	case "progress", "watch", "stream":
+		return cmdBroadcastProgress(id, args[2:])
 	case "export":
 		return cmdBroadcastExport(id, args[2:])
 	case "cancel":
@@ -157,6 +159,41 @@ func cmdBroadcastExport(id string, args []string) error {
 		q["format"] = "csv"
 	}
 	return runReq("GET", withQuery("/app/broadcasts/"+id+"/export", q), nil)
+}
+
+// cmdBroadcastProgress streams the live progress of a broadcast via
+// Server-Sent Events. The /broadcasts/<id>/progress endpoint is what the
+// app's /broadcasts/<id>/progress page consumes — each event carries the
+// running counts (sent/delivered/read/failed/pending) and a status
+// string. The CLI prints one JSON object per event and exits when the
+// broadcast reaches a terminal state (COMPLETED | CANCELLED | FAILED).
+//
+//	splashify broadcast <id> progress              follow until terminal
+//	splashify broadcast <id> progress --once       print the first event and exit
+//	splashify broadcast <id> progress --max 10     stop after 10 events
+func cmdBroadcastProgress(id string, args []string) error {
+	fs := flag.NewFlagSet("broadcast progress", flag.ContinueOnError)
+	once := fs.Bool("once", false, "print first event and exit (snapshot)")
+	max := fs.Int("max", 0, "stop after N events (0 = no cap)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	cfg, err := requireConfig()
+	if err != nil {
+		return err
+	}
+	stop := func(parsed map[string]any) bool {
+		status, _ := parsed["status"].(string)
+		switch strings.ToUpper(status) {
+		case "COMPLETED", "CANCELLED", "FAILED":
+			return true
+		}
+		return false
+	}
+	return streamSSE(cfg.BaseURL, cfg.Token,
+		"/app/broadcasts/"+id+"/progress",
+		*once, *max, stop)
 }
 
 // ─── writes (preflight-gated) ────────────────────────────────────────────────
