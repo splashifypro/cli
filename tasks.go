@@ -498,7 +498,10 @@ func cmdContact(args []string) error {
 				body[k] = v
 			}
 		}
-		return runReq("PUT", "/app/contacts/"+args[1], body)
+		// Backend route is PATCH /app/contacts/:id (sparse update). PUT
+		// returns 405 because Fiber's StrictRouting refuses to fall through
+		// to a different method on the same path.
+		return runReq("PATCH", "/app/contacts/"+args[1], body)
 
 	case "block":
 		if len(args) < 2 {
@@ -599,13 +602,17 @@ func cmdAccountOverview() error {
 // read-modify-write seed for `attribute update`. Pointers on the optional
 // booleans let us tell "absent" from "false" — important because the
 // backend's PUT requires the full body.
+//
+// Field names match the backend's response shape: the id comes back as
+// "id" (not "attribute_id" — that's only the URL/path-param key) and the
+// display order comes back as "order".
 type attributeRecord struct {
-	AttributeID  string   `json:"attribute_id"`
+	AttributeID  string   `json:"id"`
 	Label        string   `json:"label"`
 	Type         string   `json:"type"`
 	IsVisible    *bool    `json:"is_visible,omitempty"`
 	IsRequired   *bool    `json:"is_required,omitempty"`
-	DisplayOrder int      `json:"display_order,omitempty"`
+	DisplayOrder int      `json:"order,omitempty"`
 	Options      []string `json:"options,omitempty"`
 	DefaultValue string   `json:"default_value,omitempty"`
 	HelpText     string   `json:"help_text,omitempty"`
