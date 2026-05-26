@@ -1,14 +1,14 @@
 // Command splashify is the CLI for the partnersapi platform. Its headline job
-// is linking a user's messaging account to OpenClaw (the local-first AI
-// assistant) so the assistant can perform every app action on their behalf.
+// is letting a user perform every app action from the terminal, and installing
+// the Splashify OpenClaw skill so the local-first AI assistant can perform the
+// same actions on their behalf.
 //
 //	splashify connect          connect this machine with an oc_live_ token
 //	splashify whoami           show the connected account
 //	splashify token list       list access tokens
 //	splashify token create     create a new access token
 //	splashify token revoke ID  revoke an access token
-//	splashify link openclaw    register the splashify MCP server with OpenClaw
-//	splashify mcp-config       print the OpenClaw MCP config without applying it
+//	splashify link openclaw    install the Splashify skill into OpenClaw
 //	splashify doctor           diagnose the local setup
 //	splashify dashboard        consolidated home snapshot
 //	splashify profile          read / update the user's profile
@@ -50,8 +50,6 @@ func main() {
 		err = cmdToken(args[1:])
 	case "link":
 		err = cmdLink(args[1:])
-	case "mcp-config":
-		err = cmdMCPConfig(args[1:])
 	case "doctor":
 		err = cmdDoctor(args[1:])
 
@@ -196,8 +194,9 @@ Access tokens:
   splashify token revoke <id>    Revoke an access token
 
 OpenClaw:
-  splashify link openclaw        Register the splashify MCP server with OpenClaw
-  splashify mcp-config           Print the OpenClaw MCP config (no changes made)
+  splashify link openclaw                  Install the Splashify skill into OpenClaw
+  splashify link openclaw --print          Show the install path without writing
+  splashify link openclaw --path <dir>     Install into a non-default skills directory
 
 Messaging — mirrors /messages (WhatsApp):
   splashify message send --to +91… --text "…" [--context-message-id <wa_id>]

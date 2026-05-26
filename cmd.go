@@ -13,9 +13,6 @@ import (
 
 const defaultBaseURL = "https://api.splashifypro.com"
 
-// mcpBinaryName is the splashify MCP server executable that OpenClaw launches.
-const mcpBinaryName = "splashify-mcp"
-
 var stdin = bufio.NewReader(os.Stdin)
 
 // prompt reads a line from stdin, showing an optional default.
@@ -228,72 +225,60 @@ func cmdToken(args []string) error {
 
 func cmdLink(args []string) error {
 	if len(args) == 0 || args[0] != "openclaw" {
-		return fmt.Errorf("usage: splashify link openclaw [--mcp-path <path>]")
+		return fmt.Errorf("usage: splashify link openclaw [--path <skills-dir>] [--print]")
 	}
 	fs := flag.NewFlagSet("link openclaw", flag.ContinueOnError)
-	mcpPath := fs.String("mcp-path", "", "path to the "+mcpBinaryName+" binary")
+	path := fs.String("path", "", "OpenClaw skills directory to install into (defaults to ~/.openclaw/workspace/skills)")
+	print := fs.Bool("print", false, "print the target path without writing anything")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
 
-	cfg, err := requireConfig()
+	target, err := skillTargetDir(*path)
 	if err != nil {
 		return err
 	}
 
-	resolved, err := resolveMCPPath(cfg, *mcpPath)
-	if err != nil {
-		return err
-	}
-	// Remember the resolved path for future runs / doctor.
-	if cfg.MCPPath != resolved {
-		cfg.MCPPath = resolved
-		_ = saveConfig(cfg)
-	}
-
-	addArgs := openclawAddArgs(cfg, resolved)
-
-	openclaw, lookErr := exec.LookPath("openclaw")
-	if lookErr != nil {
-		fmt.Println("The `openclaw` CLI was not found on your PATH.")
-		fmt.Println("Install it (npm install -g openclaw@latest), then run:")
-		fmt.Println()
-		fmt.Println("  openclaw " + strings.Join(addArgs, " "))
+	// --print is a pure path-resolver — let it run before connect so a user
+	// can preview where the bundle would land without first authenticating.
+	if *print {
+		fmt.Println(target)
 		return nil
 	}
 
-	fmt.Println("Registering the splashify MCP server with OpenClaw…")
-	cmd := exec.Command(openclaw, addArgs...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("`openclaw mcp add` failed: %w", err)
+	// Connection is not strictly required to drop the bundle on disk, but the
+	// skill is useless without it — fail early with the same message connect
+	// errors give so users do not get a stale skill installed for no account.
+	if _, err := requireConfig(); err != nil {
+		return err
 	}
-	fmt.Println()
-	fmt.Println("✓ Linked. Restart the OpenClaw Gateway, then ask your assistant to")
-	fmt.Println("  list your contacts or send a WhatsApp message to confirm.")
-	return nil
-}
 
-// ─── mcp-config ──────────────────────────────────────────────────────────────
+	if *path == "" {
+		// Surface a clearer error than "permission denied on …/skills" when
+		// OpenClaw has not been onboarded yet (the parent ~/.openclaw is
+		// missing). We still try to install — if the dir tree is creatable we
+		// proceed silently.
+		root, _ := resolveOpenclawSkillsDir()
+		parent := filepath.Dir(root) // ~/.openclaw/workspace
+		grand := filepath.Dir(parent)  // ~/.openclaw
+		if !fileDirExists(grand) {
+			fmt.Fprintln(os.Stderr, "note: OpenClaw is not onboarded yet —")
+			fmt.Fprintln(os.Stderr, "      install it with `npm install -g openclaw@latest`")
+			fmt.Fprintln(os.Stderr, "      and run `openclaw onboard --install-daemon`, or")
+			fmt.Fprintln(os.Stderr, "      pass --path <skills-dir> to install elsewhere.")
+		}
+	}
 
-func cmdMCPConfig(_ []string) error {
-	cfg, err := requireConfig()
+	installed, err := installSkill(*path)
 	if err != nil {
 		return err
 	}
-	resolved, _ := resolveMCPPath(cfg, "")
-	if resolved == "" {
-		resolved = "/path/to/" + mcpBinaryName
-	}
-	fmt.Println("Run this to register the splashify MCP server with OpenClaw:")
+
+	fmt.Printf("✓ Splashify skill installed at %s\n", installed)
 	fmt.Println()
-	fmt.Println("  openclaw " + strings.Join(openclawAddArgs(cfg, resolved), " "))
-	fmt.Println()
-	fmt.Println("Environment passed to the MCP server:")
-	fmt.Printf("  MCP_BACKEND_URL = %s\n", cfg.BaseURL)
-	fmt.Printf("  MCP_AUTH_TOKEN  = %s…(redacted)\n", safePrefix(cfg.Token))
-	fmt.Println("  MCP_APP_SCOPE   = true")
+	fmt.Println("Next:")
+	fmt.Println("  1. Restart OpenClaw so it picks up the skill (`openclaw dashboard`).")
+	fmt.Println("  2. Ask your assistant something simple — \"list my Splashify contacts\".")
 	return nil
 }
 
@@ -334,13 +319,17 @@ func cmdDoctor(_ []string) error {
 	}
 
 	if _, err := exec.LookPath("openclaw"); err == nil {
-		check("openclaw CLI", true, "installed")
+		check("openclaw", true, "installed")
 	} else {
-		check("openclaw CLI", false, "not on PATH — npm install -g openclaw@latest")
+		check("openclaw", false, "not on PATH — npm install -g openclaw@latest")
 	}
 
-	mcp, err := resolveMCPPath(cfg, "")
-	check(mcpBinaryName, err == nil, ternary(err == nil, mcp, "not found — build mcp/ or pass --mcp-path"))
+	if skillInstalled("") {
+		target, _ := skillTargetDir("")
+		check("splashify skill", true, "installed at "+target)
+	} else {
+		check("splashify skill", false, "not installed — run `splashify link openclaw`")
+	}
 
 	fmt.Println()
 	if ok {
@@ -352,48 +341,10 @@ func cmdDoctor(_ []string) error {
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
-// openclawAddArgs builds the argument list for `openclaw mcp add`.
-func openclawAddArgs(cfg Config, mcpPath string) []string {
-	return []string{
-		"mcp", "add", "splashify",
-		"--path", mcpPath,
-		"--env", "MCP_BACKEND_URL=" + cfg.BaseURL,
-		"--env", "MCP_AUTH_TOKEN=" + cfg.Token,
-		"--env", "MCP_APP_SCOPE=true",
-	}
-}
-
-// resolveMCPPath finds the splashify-mcp binary: explicit flag, saved config,
-// PATH, then alongside the splashify executable.
-func resolveMCPPath(cfg Config, override string) (string, error) {
-	candidates := []string{override, cfg.MCPPath}
-	for _, c := range candidates {
-		if c != "" && fileExists(c) {
-			return c, nil
-		}
-	}
-	if p, err := exec.LookPath(mcpBinaryName); err == nil {
-		return p, nil
-	}
-	if self, err := os.Executable(); err == nil {
-		sibling := filepath.Join(filepath.Dir(self), mcpBinaryName)
-		if fileExists(sibling) {
-			return sibling, nil
-		}
-	}
-	return "", fmt.Errorf("%s not found — build it (cd mcp && go build -o %s ./cmd) and pass --mcp-path", mcpBinaryName, mcpBinaryName)
-}
-
-func fileExists(path string) bool {
+// fileDirExists reports whether path exists and is a directory.
+func fileDirExists(path string) bool {
 	info, err := os.Stat(path)
-	return err == nil && !info.IsDir()
-}
-
-func safePrefix(s string) string {
-	if len(s) <= 12 {
-		return s
-	}
-	return s[:12]
+	return err == nil && info.IsDir()
 }
 
 func ternary(cond bool, a, b string) string {

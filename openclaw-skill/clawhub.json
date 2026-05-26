@@ -1,0 +1,19 @@
+{
+  "slug": "splashify",
+  "name": "Splashify Pro",
+  "version": "0.1.0",
+  "description": "Send WhatsApp and RCS messages, manage contacts, run broadcasts, list templates, and read analytics on a Splashify Pro account. Drives the splashify CLI under the hood.",
+  "license": "MIT",
+  "homepage": "https://splashifypro.com",
+  "repository": "https://github.com/splashifypro/cli",
+  "author": {
+    "name": "Splashify Pro",
+    "url": "https://splashifypro.com"
+  },
+  "categories": ["messaging", "whatsapp", "rcs", "marketing"],
+  "keywords": ["whatsapp", "rcs", "messaging", "broadcasts", "contacts", "splashify"],
+  "entry": "SKILL.md",
+  "requires": {
+    "bins": ["splashify"]
+  }
+}
