@@ -112,8 +112,12 @@ func main() {
 		err = cmdFlow(args[1:])
 	case "activity", "activity-logs", "logs":
 		err = cmdActivity(args[1:])
-	case "credits", "credit", "ai-credits":
+	case "credits", "credit":
 		err = cmdCredits(args[1:])
+	case "ai-credits", "ai-credit":
+		err = cmdAICredits(args[1:])
+	case "voice-credits", "voice-credit", "voice-ai", "voice-wallet":
+		err = cmdVoiceCredits(args[1:])
 	case "email":
 		err = cmdEmail(args[1:])
 	case "calling":
@@ -405,12 +409,12 @@ Activity logs (owner-only, read-only):
   splashify activity --actor <user_id>      Filter by actor
   splashify activity --search "john"        Client-side text search
 
-AI / Voice AI credits (read-only):
-  splashify credits                         Consolidated: AI credits + voice AI rate + agents
-  splashify credits ai                      AI credit balance and info
-  splashify credits transactions            AI credit transaction history
-  splashify credits voice                   Voice AI rate, balance, trial, available minutes
-  splashify credits agents                  Voice AI agents
+AI / Voice AI credits (read-only — mirror the dashboard cards):
+  splashify ai-credits                      AI credit balance + last recharge (/dashboard card)
+  splashify ai-credits transactions         AI credit transaction history
+  splashify voice-credits                   Voice AI balance, per-min rate, trial, runway
+  splashify voice-credits agents            List voice AI agents
+  splashify credits                         Consolidated overview (AI + voice + agents in one shot)
 
 Support tickets (mirrors /support):
   splashify support                                 List every ticket (default)
@@ -624,6 +628,8 @@ Broadcast live progress (mirrors /broadcasts/<id>/progress):
 Other:
   splashify analytics [trends]
   splashify wallet [transactions]
+  splashify ai-credits [transactions]
+  splashify voice-credits [agents]
 
 Everything else (any app endpoint):
   splashify api GET  /app/contacts?page=2

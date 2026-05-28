@@ -11,19 +11,26 @@ import (
 // payment, and verification flow stays in the web app. The CLI just shows
 // what's currently on the account.
 //
-//	splashify credits                       consolidated view (default)
-//	splashify credits ai                    /app/ai-credits/info
+// Three commands cover this surface — pick by the dashboard card you want:
+//
+//	splashify credits                       consolidated overview (all three at once)
+//	splashify ai-credits                    AI credit balance card (/app/ai-credits/info)
+//	splashify voice-credits                 Voice AI rate + balance card (/app/voice-ai/rate)
+//
+// `splashify credits` keeps the subcommands too for parity:
+//
+//	splashify credits ai                    same as `splashify ai-credits`
 //	splashify credits transactions          /app/ai-credits/transactions
-//	splashify credits voice                 /app/voice-ai/rate (balance + trial + per-min)
+//	splashify credits voice                 same as `splashify voice-credits`
 //	splashify credits agents                /app/voice-ai/agents (voice AI agent list)
 //
 // Voice-AI rate response carries everything the dashboard widget shows:
 //
 //	{
-//	  "rate_per_minute":          0.50,
+//	  "rate_per_minute":          5.00,
 //	  "trial_credited":           true,
-//	  "trial_minutes_remaining":  47,
-//	  "ai_credit_balance":        123.45,
+//	  "trial_minutes_remaining":  10,
+//	  "ai_credit_balance":        1234.56,
 //	  "available_minutes":        246
 //	}
 //
@@ -49,6 +56,47 @@ func cmdCredits(args []string) error {
 		return cmdCreditsOverview()
 	default:
 		return fmt.Errorf("unknown credits subcommand: %s\nrun: splashify credits", sub)
+	}
+}
+
+// cmdAICredits is the top-level `splashify ai-credits` command — a focused
+// view of the AI credit balance card on /dashboard. Goes straight to
+// /app/ai-credits/info (returning ai_credit_amount, last_recharge,
+// tax_name, tax_percentage). The `transactions` subcommand hits the
+// transaction-history endpoint used by /ai-credits → "Transaction history".
+func cmdAICredits(args []string) error {
+	sub := ""
+	if len(args) > 0 {
+		sub = args[0]
+	}
+	switch sub {
+	case "", "info", "balance":
+		return runReq("GET", "/app/ai-credits/info", nil)
+	case "transactions", "tx", "history":
+		return runReq("GET", "/app/ai-credits/transactions", nil)
+	default:
+		return fmt.Errorf("unknown ai-credits subcommand: %s\nrun: splashify ai-credits [transactions]", sub)
+	}
+}
+
+// cmdVoiceCredits is the top-level `splashify voice-credits` command —
+// a focused view of the Voice AI widget on /dashboard. Defaults to
+// /app/voice-ai/rate which returns the per-minute rate, the underlying
+// ai_credit_balance, available_minutes, trial state, and the
+// platform/reseller breakdown. The `agents` subcommand lists the user's
+// configured voice AI agents.
+func cmdVoiceCredits(args []string) error {
+	sub := ""
+	if len(args) > 0 {
+		sub = args[0]
+	}
+	switch sub {
+	case "", "rate", "info", "balance":
+		return runReq("GET", "/app/voice-ai/rate", nil)
+	case "agents":
+		return runReq("GET", "/app/voice-ai/agents", nil)
+	default:
+		return fmt.Errorf("unknown voice-credits subcommand: %s\nrun: splashify voice-credits [agents]", sub)
 	}
 }
 
