@@ -68,11 +68,16 @@ func cmdCalling(args []string) error {
 //	splashify call upload-recording <call_id> <file>  multipart upload
 func cmdCall(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: splashify call <call_id|initiate|upload-recording> …")
+		return fmt.Errorf("usage: splashify call <call_id|initiate|status|upload-recording> …")
 	}
 	switch args[0] {
 	case "initiate":
 		return cmdCallInitiate(args[1:])
+	case "status":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: splashify call status <pending_call_id>")
+		}
+		return cmdCallStatus(args[1])
 	case "upload-recording":
 		if len(args) < 3 {
 			return fmt.Errorf("usage: splashify call upload-recording <call_id> <path-to-file>")
@@ -152,22 +157,45 @@ func cmdCallingCalls(args []string) error {
 	}), nil)
 }
 
+// cmdCallInitiate queues an outbound WhatsApp Business call. The
+// backend publishes the request to wa-call-bridge which generates the
+// SDP offer, posts to Meta, and bridges audio to the user's voice AI
+// agent. Returns 202 with a pending_call_id; poll
+// `splashify call status <pending_call_id>` for progress.
+//
+// --agent-id is optional; when omitted the backend uses the user's
+// default_voice_ai_agent_id (set at /ai-agents).
 func cmdCallInitiate(args []string) error {
 	fs := flag.NewFlagSet("call initiate", flag.ContinueOnError)
 	to := fs.String("to", "", "destination phone with country code (required)")
+	agentID := fs.String("agent-id", "", "voice agent UUID (defaults to user's default voice agent)")
 	yes := fs.Bool("yes", false, "skip the balance soft-check")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if *to == "" {
-		return fmt.Errorf(`usage: splashify call initiate --to "+91…"`)
+		return fmt.Errorf(`usage: splashify call initiate --to "+91…" [--agent-id <uuid>]`)
 	}
 	if !*yes {
 		if err := preflightSend("calls", true); err != nil {
 			return err
 		}
 	}
-	return runReq("POST", "/app/calling/initiate", map[string]any{"to": *to})
+	body := map[string]any{"to": *to}
+	if *agentID != "" {
+		body["agent_id"] = *agentID
+	}
+	return runReq("POST", "/app/calling/initiate", body)
+}
+
+// cmdCallStatus polls the pending-call row written by InitiateCall.
+// Useful for confirming the call moved from `queued` → `dialing` →
+// `connected` (or which terminal failure state it reached). Once the
+// call is `connected`, the canonical row lives in whatsapp_calls (via
+// meta_call_id) — use `splashify call <meta_call_id>` for the full
+// detail view.
+func cmdCallStatus(pendingCallID string) error {
+	return runReq("GET", "/app/calling/initiate/"+url.PathEscape(pendingCallID), nil)
 }
 
 func cmdCallUploadRecording(callID, filePath string) error {

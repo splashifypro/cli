@@ -228,12 +228,13 @@ Messaging — Instagram DMs:
                          [--media-url … --media-type image|video|audio]
   splashify instagram window --conversation <id>       24h / 7d reply window
 
-Calling — call permission + backend-side dial:
+Calling — call permission + backend-bridged outbound dial:
   splashify calling permission-status --phone "+91…"
   splashify calling send permission --to +91… --body-text "…"        (interactive)
   splashify calling send permission --to +91… --type template --template '{…}'
   splashify calling send permission-template --to +91… --name <tpl> [--language en]
-  splashify call initiate --to +91…                    Backend-side dial
+  splashify call initiate --to +91… [--agent-id <uuid>]              Queue an AI-agent outbound call
+  splashify call status <pending_call_id>                            Poll the queued call's state
 
 Contacts:
   splashify contacts [--search …] [--tag …] [--page N]
@@ -446,7 +447,8 @@ Calling (mirrors /calling — subscription + balance preflight on sends/initiate
   splashify calling analytics [--start-time --end-time --granularity --dimensions]
   splashify calling calls [--search --status --agent --page --limit]
   splashify call <call_id>                              Show one call
-  splashify call initiate --to "+91…"                   Backend-side dial (preflight)
+  splashify call initiate --to "+91…" [--agent-id <uuid>]  Queue an outbound call (wa-call-bridge → AI agent)
+  splashify call status <pending_call_id>               Poll the queued call's state (queued|dialing|connecting|connected|ended|failed_*)
   splashify call upload-recording <call_id> <file>      Multipart upload
   splashify calling permission-status --phone "+91…"
   splashify calling permissions [--search --status --agent]
