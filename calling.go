@@ -79,8 +79,10 @@ func cmdCall(args []string) error {
 		}
 		return cmdCallUploadRecording(args[1], args[2])
 	default:
-		// Treat as call_id.
-		return runReq("GET", "/app/calling/calls/"+args[0], nil)
+		// Treat as call_id. Meta call IDs can contain `=` / `/` (e.g.
+		// "wacid.HBgL…="), so PathEscape them so the server's router
+		// doesn't read them as query separators or path segments.
+		return runReq("GET", "/app/calling/calls/"+url.PathEscape(args[0]), nil)
 	}
 }
 
