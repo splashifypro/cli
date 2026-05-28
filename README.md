@@ -7,25 +7,31 @@ edit templates, read analytics — on the user's behalf.
 
 ## How it fits together
 
+Two products share one `oc_live_` access token and one `splashify` binary:
+
+- **the `splashify` CLI** — a standalone tool that calls the Splashify Pro API
+  directly. No assistant required.
+- **the Splashify OpenClaw skill** — a `SKILL.md` bundle (in `openclaw-skill/`,
+  embedded into the binary) that teaches the OpenClaw assistant to drive the CLI
+  on your behalf.
+
 ```
-OpenClaw ──MCP/stdio──► splashify-mcp ──HTTPS, Bearer oc_live_──► backend /api/v1/app/*
+OpenClaw ──exec──► splashify CLI ──HTTPS, Bearer oc_live_──► backend /api/v1/app/*
 ```
 
-The CLI does three things: hold an `oc_live_` access token, manage tokens, and
-register the `splashify-mcp` server with OpenClaw.
+The CLI does two things: run every app task itself, and install the Splashify
+skill into OpenClaw (`splashify link openclaw`). The skill carries no
+credentials of its own — it reads the same `~/.splashify/config.json` through
+the CLI it drives.
 
 ## Build
 
 ```bash
-# the CLI
-cd cli && go build -o splashify ./...
-
-# the MCP server it links into OpenClaw (separate Go module)
-cd ../mcp && go build -o splashify-mcp ./cmd
+go build -o splashify ./...
 ```
 
-Put `splashify` and `splashify-mcp` on your `PATH` (same directory works too —
-the CLI looks for `splashify-mcp` next to itself).
+Put `splashify` on your `PATH`. The OpenClaw skill bundle is embedded into the
+binary, so there is nothing else to build or download.
 
 ## Connect
 
@@ -39,7 +45,7 @@ splashify token list                                 # see your tokens
 splashify token revoke <id>                           # kill a token
 
 splashify whoami        # show the connected account
-splashify doctor        # diagnose config / token / openclaw / mcp binary
+splashify doctor        # diagnose config / token / WABA / openclaw / skill
 ```
 
 Config is stored at `~/.splashify/config.json` (mode 0600) — it holds the
@@ -111,7 +117,8 @@ pass a JSON request body for `POST`/`PUT`/`PATCH`.
 
 ## Connect Splashify Pro with OpenClaw
 
-To let the OpenClaw AI assistant drive your account in natural language:
+To let the OpenClaw AI assistant drive your account in natural language, install
+the Splashify skill into OpenClaw:
 
 ```bash
 # 1. install OpenClaw
@@ -120,21 +127,29 @@ npm install -g openclaw@latest && openclaw onboard --install-daemon
 # 2. connect this machine (if not already done)
 splashify connect
 
-# 3. register the splashify MCP server with OpenClaw
-splashify link openclaw       # runs `openclaw mcp add splashify …` for you
-splashify mcp-config          # or print the command to run manually
+# 3. install the Splashify skill into OpenClaw
+splashify link openclaw            # writes the bundle to ~/.openclaw/workspace/skills/splashify/
+splashify link openclaw --print    # or just show the target path without writing
 
-# 4. restart the OpenClaw Gateway, then confirm
-splashify doctor              # all checks should be ✓
+# 4. restart OpenClaw so it picks up the skill, then confirm
+openclaw dashboard
+splashify doctor                   # all checks should be ✓
 ```
+
+`splashify link openclaw` installs the **Splashify skill bundle** — a `SKILL.md`
+that teaches OpenClaw which `splashify` command maps to each task. The bundle is
+embedded in the binary, so no extra download is needed; pass `--path <dir>` to
+install into a non-default skills directory.
+
+> **Upgrading from the old MCP integration?** Earlier versions connected through
+> an MCP server (`splashify-mcp`, `splashify mcp-config`). That path has been
+> replaced by the skill. Remove the old server with
+> `openclaw mcp remove splashify`.
 
 Then ask your assistant things like *"send a WhatsApp to +91… saying the order
 shipped"* or *"list my VIP contacts"* — it performs them on your account.
 
-**Full step-by-step connect + usage guide:**
-[`app-docs/openclaw-integration.md`](../app-docs/openclaw-integration.md) — covers
-prerequisites, the manual `openclaw mcp add` command, example assistant
-prompts, revoking access, and troubleshooting.
+**Full step-by-step connect + usage guide:** https://docs.splashifypro.com/openclaw
 
 Run `splashify help` for the full command list.
 
