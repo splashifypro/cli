@@ -61,7 +61,7 @@ func withQuery(path string, params map[string]string) string {
 
 func cmdMessage(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: splashify message <send|template|media|location|reaction|contact|typing>")
+		return fmt.Errorf("usage: splashify message <send|template|media|location|reaction|contact|typing|interactive|flow|mark-read>")
 	}
 	switch args[0] {
 	case "send":
@@ -141,6 +141,7 @@ func cmdMessage(args []string) error {
 		to := fs.String("to", "", "recipient phone")
 		mtype := fs.String("type", "", "media type: image, document, video, audio")
 		murl := fs.String("url", "", "public URL of the media file")
+		mid := fs.String("media-id", "", "media_id from /app/media (alternative to --url)")
 		caption := fs.String("caption", "", "optional caption")
 		filename := fs.String("filename", "", "filename hint (documents only)")
 		// `--voice` flips the audio render to a WhatsApp voice-note bubble
@@ -150,10 +151,19 @@ func cmdMessage(args []string) error {
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
-		if *to == "" || *mtype == "" || *murl == "" {
-			return fmt.Errorf("usage: splashify message media --to +91… --type image --url <url> [--caption …] [--voice true]")
+		if *to == "" || *mtype == "" || (*murl == "" && *mid == "") {
+			return fmt.Errorf("usage: splashify message media --to +91… --type image --url <url> [--caption …] [--voice true]\n       or: splashify message media --to +91… --type image --media-id <id> [--caption …]")
 		}
-		body := map[string]any{"to": *to, "media_type": *mtype, "media_url": *murl}
+		if *murl != "" && *mid != "" {
+			return fmt.Errorf("pass either --url or --media-id, not both")
+		}
+		body := map[string]any{"to": *to, "media_type": *mtype}
+		if *murl != "" {
+			body["media_url"] = *murl
+		}
+		if *mid != "" {
+			body["media_id"] = *mid
+		}
 		if *caption != "" {
 			body["caption"] = *caption
 		}
@@ -276,6 +286,67 @@ func cmdMessage(args []string) error {
 			return fmt.Errorf("usage: splashify message typing --to +91…")
 		}
 		return runReq("POST", "/app/messages/typing-indicator", map[string]any{"to": *to})
+
+	case "interactive":
+		// Sends an interactive message (buttons, list, or CTA URL) within the
+		// 24-hour customer-service window — no template cost, unlike paid
+		// messages. Accepts Meta's interactive object structure.
+		fs := flag.NewFlagSet("message interactive", flag.ContinueOnError)
+		to := fs.String("to", "", "recipient phone (required)")
+		payload := fs.String("payload", "", `full Meta interactive JSON, e.g. '{"type":"button","body":{"text":"..."},"action":{"buttons":[...]}}'`)
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *to == "" || *payload == "" {
+			return fmt.Errorf("usage: splashify message interactive --to +91… --payload '{…}'")
+		}
+		var interactive map[string]any
+		if err := json.Unmarshal([]byte(*payload), &interactive); err != nil {
+			return fmt.Errorf("--payload must be valid JSON: %w", err)
+		}
+		return runReq("POST", "/app/messages/send-interactive", map[string]any{
+			"to": *to, "interactive": interactive,
+		})
+
+	case "flow":
+		// Sends a WhatsApp Flow to a recipient. Flows are structured input
+		// forms (NFC/NFM) the user fills out and submits. Requires flow_id,
+		// flow_token, and optional CTA text.
+		fs := flag.NewFlagSet("message flow", flag.ContinueOnError)
+		to := fs.String("to", "", "recipient phone (required)")
+		flowID := fs.String("flow-id", "", "flow_id from /app/flows")
+		flowToken := fs.String("flow-token", "", "flow_token generated for this user")
+		cta := fs.String("cta", "", "CTA button text (e.g., 'View Form')")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *to == "" || *flowID == "" || *flowToken == "" {
+			return fmt.Errorf("usage: splashify message flow --to +91… --flow-id <id> --flow-token <token> [--cta 'View Form']")
+		}
+		body := map[string]any{
+			"to":         *to,
+			"flow_id":    *flowID,
+			"flow_token": *flowToken,
+		}
+		if *cta != "" {
+			body["flow_cta"] = *cta
+		}
+		return runReq("POST", "/app/messages/send-flow", body)
+
+	case "mark-read", "mark-as-read", "mark_read":
+		// Marks a message as read. Shows a double-tick on the recipient's side
+		// and is cheap (no wallet cost). Useful to signal processing completion.
+		fs := flag.NewFlagSet("message mark-read", flag.ContinueOnError)
+		msgID := fs.String("message-id", "", "wa_message_id of the message to mark read (required)")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *msgID == "" {
+			return fmt.Errorf("usage: splashify message mark-read --message-id <wa_message_id>")
+		}
+		return runReq("POST", "/app/messages/mark-read", map[string]any{
+			"message_id": *msgID,
+		})
 
 	default:
 		return fmt.Errorf("unknown message subcommand: %s\nrun: splashify message", args[0])

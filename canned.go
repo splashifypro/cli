@@ -56,6 +56,12 @@ func cmdCanned(args []string) error {
 		}
 		return cmdCannedUpdate(args[1], args[2:])
 
+	case "send":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: splashify canned send <id|shortcut> --to +91…")
+		}
+		return cmdCannedSend(args[1], args[2:])
+
 	case "toggle", "toggle-active":
 		if len(args) < 2 {
 			return fmt.Errorf("usage: splashify canned toggle <id>")
@@ -354,6 +360,12 @@ func cmdCannedUpdate(id string, args []string) error {
 			if err := json.Unmarshal([]byte(*rawPayload), &p); err != nil {
 				return fmt.Errorf("--payload must be valid JSON: %w", err)
 			}
+			// Same shape check as create — validated against the *effective*
+			// type, so `--type X --payload Y` is caught even when only one of
+			// the two flags changes.
+			if err := validateCannedPayload(effectiveType, p); err != nil {
+				return err
+			}
 			body["message_payload"] = p
 		} else if passed["text"] || passed["url"] || passed["caption"] || passed["filename"] || passed["type"] {
 			// Build a new payload, seeded by the current values for that type
@@ -388,6 +400,91 @@ func cmdCannedUpdate(id string, args []string) error {
 	return runReq("PUT", "/app/canned-messages/"+id, body)
 }
 
+// ─── send ────────────────────────────────────────────────────────────────────
+
+// cmdCannedSend implements `splashify canned send <id|shortcut> --to +91…`.
+//
+// The composer in /messages can send a stored canned message; before this the
+// CLI could author a library it had no way to use. Routing goes through
+// planCannedSend so the CLI and the app produce byte-identical output for the
+// same record — including the numbered text list for the INTERACTIVE_* types,
+// which have no native send endpoint.
+func cmdCannedSend(ref string, args []string) error {
+	fs := flag.NewFlagSet("canned send", flag.ContinueOnError)
+	to := fs.String("to", "", "recipient phone, with country code (+91…)")
+	dryRun := fs.Bool("dry-run", false, "print the resolved request without sending")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *to == "" && !*dryRun {
+		return fmt.Errorf("usage: splashify canned send <id|shortcut> --to +91… [--dry-run]")
+	}
+
+	msg, err := findCannedMessage(ref)
+	if err != nil {
+		return err
+	}
+
+	msgType, _ := msg["message_type"].(string)
+	plan, err := planCannedSend(msgType, msg["message_payload"])
+	if err != nil {
+		// An authoring problem, not a transport failure — name the record so
+		// the user knows which one to fix, and send nothing.
+		name, _ := msg["name"].(string)
+		return fmt.Errorf("canned message %q (%s) can't be sent: %w", name, msgType, err)
+	}
+
+	body := map[string]any{"to": *to}
+	for k, v := range plan.Body {
+		body[k] = v
+	}
+
+	if *dryRun {
+		preview := map[string]any{"endpoint": plan.Endpoint, "body": body}
+		encoded, _ := json.MarshalIndent(preview, "", "  ")
+		fmt.Println(string(encoded))
+		return nil
+	}
+
+	return runReq("POST", plan.Endpoint, body)
+}
+
+// findCannedMessage resolves a canned message by id or by shortcut. The
+// backend has no per-id GET, so this fetches the list and filters — the same
+// fallback cmdCannedGet uses.
+func findCannedMessage(ref string) (map[string]any, error) {
+	cfg, err := requireConfig()
+	if err != nil {
+		return nil, err
+	}
+	raw, err := newAPIClient(cfg.BaseURL, cfg.Token).callRaw("GET", "/app/canned-messages", nil)
+	if err != nil {
+		return nil, err
+	}
+	var list struct {
+		Success  bool             `json:"success"`
+		Messages []map[string]any `json:"messages"`
+	}
+	if err := json.Unmarshal(raw, &list); err != nil {
+		return nil, fmt.Errorf("unexpected response from /app/canned-messages: %w", err)
+	}
+
+	// Shortcuts are stored with the leading slash ("/hi"); accept either form.
+	wantShortcut := ref
+	if !strings.HasPrefix(wantShortcut, "/") {
+		wantShortcut = "/" + wantShortcut
+	}
+	for _, m := range list.Messages {
+		if id, _ := m["id"].(string); id == ref {
+			return m, nil
+		}
+		if sc, _ := m["shortcut"].(string); sc != "" && (sc == ref || sc == wantShortcut) {
+			return m, nil
+		}
+	}
+	return nil, fmt.Errorf("canned message %q not found (by id or shortcut)", ref)
+}
+
 // ─── payload builder ────────────────────────────────────────────────────────
 
 // buildCannedPayload assembles the Meta-Cloud-API-compatible message_payload
@@ -404,6 +501,12 @@ func buildCannedPayload(msgType, text, mediaURL, caption, filename, rawPayload s
 		var p any
 		if err := json.Unmarshal([]byte(rawPayload), &p); err != nil {
 			return nil, fmt.Errorf("--payload must be valid JSON: %w", err)
+		}
+		// Valid JSON is not enough — a payload that doesn't match the declared
+		// type stores a record nothing can render. Catch it here rather than at
+		// send time.
+		if err := validateCannedPayload(msgType, p); err != nil {
+			return nil, err
 		}
 		return p, nil
 	}

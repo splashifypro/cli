@@ -142,6 +142,8 @@ func main() {
 		err = cmdAIAgent(args[1:])
 	case "integrations":
 		err = cmdIntegrations(args[1:])
+	case "webhooks", "webhook":
+		err = cmdWebhooks(args[1:])
 	case "allowed-ips", "ip-allowlist", "ips":
 		err = cmdAllowedIPs(args[1:])
 	case "ctwa", "meta-ads":
@@ -206,10 +208,14 @@ Messaging — mirrors /messages (WhatsApp):
   splashify message send --to +91… --text "…" [--context-message-id <wa_id>]
   splashify message template --to +91… --name <tpl> [--lang en] [--vars '[…]']
   splashify message media --to +91… --type image --url <url> [--caption …] [--voice true]
+  splashify message media --to +91… --type image --media-id <id> [--caption …]
   splashify message location --to +91… --lat 12.97 --lng 77.59 [--name …] [--address …]
   splashify message reaction --to +91… --message-id <wa_id> --emoji "👍"
   splashify message contact --to +91… --contacts '[…]'  (or --file ./contact.json)
   splashify message typing --to +91…                  (typing-indicator bubble)
+  splashify message interactive --to +91… --payload '{…}'    (buttons/list/CTA — 24h window)
+  splashify message flow --to +91… --flow-id <id> --flow-token <token> [--cta "View Form"]
+  splashify message mark-read --message-id <wa_message_id>   (double-tick)
   splashify conversations [--channel whatsapp|rcs|instagram] [--status open|resolved] \
                           [--search …] [--page N] [--limit N]
   splashify conversation <id>                          Show one conversation + messages
@@ -367,7 +373,8 @@ Instagram automation (mirrors /instagram-automation):
 
 Canned Messages (mirrors /settings/canned-messages):
   splashify canned                          List every canned message
-  splashify canned list [--search …] [--type TEXT|IMAGE|VIDEO|AUDIO|DOCUMENT]
+  splashify canned list [--search …] [--type TEXT|IMAGE|VIDEO|AUDIO|DOCUMENT|
+                                             LOCATION|CONTACT|ADDRESS|INTERACTIVE_*]
   splashify canned <id>                     Show one canned message
   splashify canned create --name "Welcome" --type TEXT --text "Hi there!" \
                           [--shortcut "/hi"] [--description "…"]
@@ -377,12 +384,21 @@ Canned Messages (mirrors /settings/canned-messages):
                           --url https://… --filename brochure.pdf [--caption "…"]
   splashify canned create --name "Voice note" --type AUDIO --url https://…
   splashify canned create --name "List menu" --type INTERACTIVE_LIST \
-                          --payload '{"interactive":{…}}'
+      --payload '{"interactive":{"body":{"text":"Pick one:"},"action":{
+                   "sections":[{"rows":[{"id":"a","title":"Alpha"}]}]}}}'
   splashify canned update <id> [--name …] [--shortcut …] [--description …] \
                                 [--type …] [--text … | --url …] [--caption …] \
                                 [--filename …] [--payload '{…}']
+  splashify canned send <id|shortcut> --to +91… [--dry-run]
   splashify canned toggle <id>              Flip is_active (activate / deactivate)
   splashify canned delete <id>              Remove the canned message
+
+  --payload is checked against --type, so a mismatched shape is rejected at
+  create/update time rather than failing when you try to send it.
+  WhatsApp has no free-form interactive send: INTERACTIVE_LIST / _BUTTON /
+  _CTA_URL and ADDRESS are delivered as a numbered text list the recipient
+  replies to by number. Real tappable buttons require an approved template
+  (see: splashify message template). Use --dry-run to see the exact text first.
 
 Team / Agents (mirrors /settings/agents):
   splashify team                            List members (+ limit / count)
@@ -569,6 +585,16 @@ Integrations (mirrors /integrations):
   splashify integrations token              Mint a connect-token for OAuth callbacks
   splashify integrations logs [--limit N] [--slug <slug>]
   splashify integrations log <log_id>
+
+Webhooks (subscription + webhook management):
+  splashify webhooks                         List all registered webhooks
+  splashify webhooks create --url "https://…" --events "incoming_message,message_delivered" \
+                            [--description "…"]
+  splashify webhooks <webhook_id>            Show one webhook
+  splashify webhooks <webhook_id> test       Send a synthetic test event
+  splashify webhooks <webhook_id> rotate-secret  Rotate the signing secret
+  splashify webhooks <webhook_id> update [--url "…"] [--events "…"] [--description "…"]
+  splashify webhooks <webhook_id> delete     Unregister the webhook
 
 IP allowlist (paid — mirrors /settings/allowed-ips):
   splashify allowed-ips                     List allowlist entries
